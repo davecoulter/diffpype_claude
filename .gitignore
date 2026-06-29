@@ -1,0 +1,13 @@
+# Caches and envs
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+.env
+
+# Claude internal tracking
+.claude/
+
+# Local data files (Crucial for S3/fits development)
+data/
+*.fits
