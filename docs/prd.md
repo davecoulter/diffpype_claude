@@ -1,0 +1,65 @@
+# Diffpype Product Requirements Document (PRD)
+**Version:** 0.3
+**Date:** 2026-06-30
+
+### Preamble
+This document defines the overarching workflows, user interactions, and macro-level behavior of the Diffpype system. It focuses on the "What" and "Why." Technical implementation details (the "How") are reserved for the `docs/architecture/` documents.
+
+### User Journey & Workflow Phases
+
+#### Phase 0: Project Initialization
+*   **Action:** The user defines a new project with specific parameters, notably a project name.
+*   **System Behavior:** Diffpype creates working directories keyed to this name and reads a project configuration file that specifies the target S3-compatible storage site for interstitial files.
+
+#### Phase 1: Spatial Definition & Image Acquisition
+*   **Action:** The user identifies a spatial patch of the sky using a coordinate and a geometry (radius, bounding box, or polygon).
+*   **System Behavior:** Diffpype queries an astronomical repository (initially MAST for level 2 NIRCam images; extensible to IPAC, Euclid, etc.) to acquire images within that spatial patch.
+
+#### Phase 2: Pre-Processing (Parallel Actions)
+*   **Action:** The user defines single-image operations to be performed on the acquired images. 
+*   **System Behavior:** Operations like image alignment (e.g., using JHAT) are executed in parallel via the Celery worker queue.
+
+#### Phase 3: Tessellation & Association
+*   **Action:** The user defines a square, regular grid to tessellate the spatial region. Each square is a "tile," which determines the central coordinate and tangent plane of the resulting image mosaic. 
+*   **System Behavior:** Diffpype determines image membership for each tile. Images within a tile are associated and grouped by bandpass (filter) and epoch. 
+*   **Epoch Definition:** Users can define epochs manually via custom date ranges or automatically via a peak-finding algorithm.
+
+#### Phase 4: Mosaic Generation (Drizzling)
+*   **Action:** The user initiates mosaic creation for a given tile + filter + epoch association.
+*   **System Behavior:** 
+    *   **Dependency Gating:** The stacking process cannot start if required single operations (like Phase 2 alignment) on constituent images are still pending.
+    *   **Execution:** Once all components are ready, Diffpype creates the corresponding database entities via the SQLAlchemy ORM and places a job on the Celery queue to drizzle the images using the JWST level 3 pipeline.
+
+#### Phase 5: Difference Imaging
+*   **Action:** Once mosaics are created, the user associates pairs of mosaics for subtraction, specifying the template mosaic and the target mosaic.
+*   **System Behavior:** The user selects a difference image algorithm (Primitive numpy subtraction, SFFT, HOTPANTS, PyZOGY). The job is dispatched to the queue.
+
+#### Phase 6: Results Visualization & Export
+*   **Action:** The user inspects the resulting difference images and downloads deliverables.
+*   **System Behavior:**
+    *   **Canvas Visualization:** Resulting FITS files are rendered in a performant HTML canvas/pane within the React UI (utilizing tools like fitsmap or similar).
+    *   **Asset URLs:** Visualized assets have dedicated URLs to allow for direct downloading.
+    *   **Export Widget:** The UI provides a download widget allowing the user to select specific files to download or execute a "download all" command.
+
+### Job Orchestration, Monitoring & Re-Execution
+*   **Queue Inspection:** The status of each job on the Celery queue is fully inspectable by the user, utilizing a monitoring tool such as Flower.
+*   **Failure Handling (Blocking vs. Non-Blocking):** Users define whether individual jobs are "blocking" (hard dependencies for downstream tasks). If a non-blocking task fails, the system automatically excludes the failed asset and allows the downstream DAG execution to continue.
+*   **Stage Inspection & Parameter Iteration:** Users can inspect the intermediate outputs of any stage. Users can manually adjust parameters and re-run the specific upstream step.
+*   **Data Staleness & Cascade Deletes:** When an upstream task is re-executed, the system automatically flags any completed downstream artifacts as "out of sync" with the new inputs. Alternatively, users can specify a "cascade delete" override to automatically wipe downstream products when upstream assets change.
+
+### User Interfaces
+*   **Web UI (React):** A visual frontend that displays polygons and allows users to select tiles to view image memberships. Interacting with a submit button pushes object definitions via the FastAPI to save state in the Postgres database.
+*   **CLI:** A programmatic command-line interface capable of driving the exact same workflow without the Web UI.
+
+### Deferred / Future Scope (v2+)
+To ensure fast, iterative development of the core infrastructure, the following downstream pipeline features are deferred from the initial implementation:
+*   Source detection on difference images.
+*   Multi-source requirement gates (epoch/filter) for promoting artifacts to "astrophysical" status.
+*   Extracting photometry from difference images.
+*   Clustering detected sources into unique objects and composing light curves.
+
+### Logs
+#### 2026-06-30
+*   **Action:** Drafted v0.1 of PRD based on the user's workflow definition.
+*   **Action:** Updated to v0.2. Added Job Orchestration, Monitoring & Re-Execution section.
+*   **Action:** Updated to v0.3. Added Phase 6 (Results Visualization & Export) covering FITS HTML canvas rendering and download widgets. Added Deferred / Future Scope section to explicitly isolate downstream ML/photometry tasks from the v1 MVP.

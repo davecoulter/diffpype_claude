@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <script type="text/javascript" src="https://aladin.cds.unistra.fr/AladinLite/api/v3/latest/aladin.js" charset="utf-8"></script>
+    <script type="text/javascript">
+        let aladin;
+        A.init.then(() => {
+            aladin = A.aladin('#aladin-lite-div', {survey: "P/DSS2/color", fov:60});
+        });
+
+
+        var contour = A.graphicOverlay({id: 1, color:"red", lineWidth: 2, name:"test"});
+        aladin.addOverlay(contour);
+        contour.addFootprints([A.polygon()])
+
+    </script>
+
+</head>
+<body>
+
+<h1>Projects</h1>
+<ul>
+{% for proj in project_list %}
+    <li>{{ proj.name }}</li>
+{% endfor %}
+</ul>
+
+
+<form action="{% url 'create_project' %}" method="post">
+{% csrf_token %}
+<fieldset>
+    <h1>Project Name</h1>
+    <input type="text" name="proj_name">
+</fieldset>
+<input type="submit" value="Create">
+</form>
+
+<div id="aladin-lite-div" style="width:800px;height:800px;"></div>
+
+</body>
+</html>

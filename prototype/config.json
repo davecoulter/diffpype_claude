@@ -1,0 +1,15 @@
+{
+	"bad_subs": ["SUB64P", "SUB160P", "SUB160", "SUB32TATS", "SUB80", "SUB64", "SUB128", "maskrnd", "maskbar"],
+	"download_dir": "/astro/armin/JOUST/TSST/jwst_supernova_search/transient_monitor/",
+	"email_password": "jxuokynfwmximvkx",
+	"email_recipient": "michael72e@gmail.com",
+	"hotpants_dir": "hotpants",
+	"log_name": "",
+	"mast_token": "4fb164fdee444ffc8ddd87bd43cfefad",
+	"multi_epoch_file": "",
+	"override_query": true,
+	"query_days": 730,
+	"science_extension": 1,
+	"send_report_email": true,
+	"telescope_choice": "JWST"
+}
