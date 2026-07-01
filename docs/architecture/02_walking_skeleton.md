@@ -20,6 +20,7 @@ This document defines the "Walking Skeleton" (Stage 0) for the Diffpype system. 
   * `api`: FastAPI container.
   * `worker`: Celery worker container.
   * `ui`: Minimal React/Vite container.
+  * `flower`: Celery monitoring dashboard exposing port 5555 to the host.
 
 **2. Minimal Database (SQLAlchemy)**
 * A rudimentary SQLAlchemy setup connected to the `db` container.
@@ -69,3 +70,4 @@ Implementation defaults chosen without a question (consistent with "thinnest pos
     *   `docker-compose.yml` — orchestrates `db`, `redis`, `api`, `worker`, `ui` with healthchecks and hot-reload volume mounts.
     *   `requirements.txt`, `pytest.ini`, `.env.example`
 *   **Verification:** `docker compose up --build` — all five services started healthy. `pytest` (4 tests, 4 pass): 3 isolated FastAPI unit tests (mocked DB + mocked Celery dispatch), 1 Celery task unit test (mocked `time.sleep` + mocked `SessionLocal`). E2E curl: `POST /jobs/dummy` → status `Running` → after 5s → status `Success`. `GET /jobs/dummy/99999` → 404. UI served on port 5173 (HTTP 200). `StepDefinition` seed row confirmed in Postgres.
+*   **Action:** Updated to v0.2. Added Flower as a visualization for the Celery/Redis queue.

@@ -8,6 +8,10 @@ node_modules/
 # Claude internal tracking
 .claude/
 
+# Sphinx build output
+docs/_build/
+
 # Local data files (Crucial for S3/fits development)
 data/
 *.fits
+**/.DS_Store

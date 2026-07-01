@@ -12,6 +12,8 @@ The system is divided into rigidly isolated layers to enforce testability and sc
 *   **Task Orchestration (Celery):** Handles all asynchronous and long-running business logic. Workflows are constructed dynamically at runtime using native Celery Canvas primitives (groups, chains, chords). 
 *   **Data Persistence (PostgreSQL + SQLAlchemy):** The central system of record for domain entities. Structured relational data (projects, tiles, mosaic memberships) is stored here. Spatial data utilizes Q3C and HealpixAlchemy. 
 *   **Transient State & Queue (Redis):** Acts as the Celery message broker and result backend. Stores transient job progress, elapsed times, and stack traces for failed jobs.
+*   **Queue Monitoring (Flower):** A lightweight web dashboard connected to Redis, used strictly for system administration and real-time visualization of the Celery task queue.
+
 *   **Blob Storage (S3-Compatible):** The sole storage layer for all interstitial files (FITS images, catalogs). Configured dynamically via Docker environment variables.
 *   **Frontend (React):** A thin visualization layer utilizing unidirectional state flow. Features a traffic-light status grid. Integrates `fitsmap` for low-latency image visualization by fetching assets directly from S3 via pre-signed URLs.
 
@@ -55,9 +57,10 @@ Code currently residing in the `prototype/` directory will be used as a logical 
 *(Claude will use this section to pause and ask the human questions regarding implementation details before generating code.)*
 
 ### Logs
-#### 2026-06-30
+#### 2026-07-01
 *   **Action:** Drafted v0.1 - v0.4 of System Architecture baseline, defining DB, Cache, and DAG strategies.
 *   **Action:** Updated to v0.5. (Retracted POSIX file system approach).
 *   **Action:** Updated to v0.6. Restored strict S3-compatible storage constraints. Added the S3 Execution & Storage Optimization Strategy.
 *   **Action:** Updated to v0.7. Enforced disk-caching to an ephemeral `/scratch` volume and mandated memory-mapping/chunking for worker algorithms.
 *   **Action:** Updated to v0.8. Added the Worker Routing & Hardware Constraints section to govern Celery queue distribution for GPU and external pipeline requirements.
+*   **Action:** Updated to v0.9. Added Flower as a visualization for the Celery/Redis queue.
