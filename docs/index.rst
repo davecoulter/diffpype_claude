@@ -10,6 +10,13 @@ CLI
    :members:
    :undoc-members:
 
+Services
+--------
+
+.. automodule:: src.services.job_service
+   :members:
+   :undoc-members:
+
 API (FastAPI)
 -------------
 

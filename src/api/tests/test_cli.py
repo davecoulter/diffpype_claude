@@ -1,13 +1,19 @@
 import argparse
+from unittest.mock import MagicMock
 
 import pytest
 
-from src.cli import build_parser, cmd_seed_db, main
+from src.cli import build_parser, cmd_run_dummy, cmd_seed_db, main
 
 
 def test_parser_recognises_seed_db_command():
     args = build_parser().parse_args(["seed-db"])
     assert args.command == "seed-db"
+
+
+def test_parser_recognises_run_dummy_command():
+    args = build_parser().parse_args(["run-dummy"])
+    assert args.command == "run-dummy"
 
 
 def test_missing_command_exits():
@@ -18,6 +24,12 @@ def test_missing_command_exits():
 def test_main_routes_seed_db_to_cmd_seed_db(mocker):
     mock_cmd = mocker.patch("src.cli.cmd_seed_db")
     main(["seed-db"])
+    mock_cmd.assert_called_once()
+
+
+def test_main_routes_run_dummy_to_cmd_run_dummy(mocker):
+    mock_cmd = mocker.patch("src.cli.cmd_run_dummy")
+    main(["run-dummy"])
     mock_cmd.assert_called_once()
 
 
@@ -33,3 +45,31 @@ def test_cmd_seed_db_logs_to_stdout(mocker, capsys):
     out = capsys.readouterr().out
     assert "Seeding database" in out
     assert "Done" in out
+
+
+def test_cmd_run_dummy_calls_dispatch_and_closes_session(mocker):
+    mock_dispatch = mocker.patch(
+        "src.services.job_service.dispatch_dummy_job",
+        return_value=("fake-job-id", 42),
+    )
+    mock_session = MagicMock()
+    mocker.patch("src.db.session.SessionLocal", return_value=mock_session)
+
+    cmd_run_dummy(argparse.Namespace(command="run-dummy"))
+
+    mock_dispatch.assert_called_once_with(mock_session)
+    mock_session.close.assert_called_once()
+
+
+def test_cmd_run_dummy_logs_job_id_to_stdout(mocker, capsys):
+    mocker.patch(
+        "src.services.job_service.dispatch_dummy_job",
+        return_value=("abc-123", 7),
+    )
+    mocker.patch("src.db.session.SessionLocal", return_value=MagicMock())
+
+    cmd_run_dummy(argparse.Namespace(command="run-dummy"))
+
+    out = capsys.readouterr().out
+    assert "abc-123" in out
+    assert "7" in out

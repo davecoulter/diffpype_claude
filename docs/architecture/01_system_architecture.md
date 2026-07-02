@@ -5,17 +5,17 @@
 ### Preamble
 This document dictates the technical implementation, component wiring, and strict API boundaries for the Diffpype system. It defines *how* the workflows in `docs/prd.md` will be executed using the tech stack mandated by `CLAUDE.md`. 
 
-### System Components & Boundaries
-The system is divided into rigidly isolated layers to enforce testability and scalability:
-
-*   **API Boundary (FastAPI):** Acts as the sole entry point for both the React Web UI and the CLI. It uses Pydantic for strict input/output validation. It does *not* execute long-running tasks. Its primary role is to validate requests, mutate database state, generate S3 pre-signed URLs, and dispatch DAGs to the queue.
-*   **Task Orchestration (Celery):** Handles all asynchronous and long-running business logic. Workflows are constructed dynamically at runtime using native Celery Canvas primitives (groups, chains, chords). 
-*   **Data Persistence (PostgreSQL + SQLAlchemy):** The central system of record for domain entities. Structured relational data (projects, tiles, mosaic memberships) is stored here. Spatial data utilizes Q3C and HealpixAlchemy. 
+##### System Components & Boundaries
+The system is divided into rigidly isolated layers to enforce testability and scalability, utilizing a Shared Service Layer pattern:
+*   **Shared Service Layer:** The core Python modules (e.g., `src/services/`) that house all business logic. This layer accepts database sessions via dependency injection, mutates database state, generates S3 pre-signed URLs, and dispatches Celery DAGs. 
+*   **API Boundary (FastAPI):** Acts as the thin HTTP entry point for the React Web UI. It uses Pydantic for strict I/O validation, but contains zero business logic, strictly delegating execution to the Shared Service Layer.
+*   **CLI Boundary (diffpype-manage):** Acts as the direct terminal entry point for DevOps, database seeding, and administrative tasks. Like the API, it parses inputs and delegates execution to the Shared Service Layer.
+*   **Task Orchestration (Celery):** Handles all asynchronous and long-running business logic. Workflows are constructed dynamically at runtime using native Celery Canvas primitives (groups, chains, chords).
+*   **Data Persistence (PostgreSQL + SQLAlchemy):** The central system of record for domain entities. Structured relational data is stored here. Spatial data utilizes Q3C and HealpixAlchemy.
 *   **Transient State & Queue (Redis):** Acts as the Celery message broker and result backend. Stores transient job progress, elapsed times, and stack traces for failed jobs.
 *   **Queue Monitoring (Flower):** A lightweight web dashboard connected to Redis, used strictly for system administration and real-time visualization of the Celery task queue.
-
 *   **Blob Storage (S3-Compatible):** The sole storage layer for all interstitial files (FITS images, catalogs). Configured dynamically via Docker environment variables.
-*   **Frontend (React):** A thin visualization layer utilizing unidirectional state flow. Features a traffic-light status grid. Integrates `fitsmap` for low-latency image visualization by fetching assets directly from S3 via pre-signed URLs.
+*   **Frontend (React):** A thin visualization layer utilizing unidirectional state flow. Features a traffic-light status grid. Integrates fitsmap for low-latency image visualization by fetching assets directly from S3 via pre-signed URLs.
 
 ### S3 Execution & Storage Optimization Strategy
 To minimize the storage footprint while preserving a stateless, cloud-native architecture, Diffpype relies on database-driven logical mapping rather than binary duplication.
@@ -64,3 +64,4 @@ Code currently residing in the `prototype/` directory will be used as a logical 
 *   **Action:** Updated to v0.7. Enforced disk-caching to an ephemeral `/scratch` volume and mandated memory-mapping/chunking for worker algorithms.
 *   **Action:** Updated to v0.8. Added the Worker Routing & Hardware Constraints section to govern Celery queue distribution for GPU and external pipeline requirements.
 *   **Action:** Updated to v0.9. Added Flower as a visualization for the Celery/Redis queue.
+*   **Action:** Updated to v1.0. Transitioned to a Shared Service Layer architecture. Removed FastAPI as the sole entry point for the CLI, elevating the CLI to a first-class administrative tool that shares core business logic modules with the API.

@@ -21,25 +21,16 @@ def client():
     return TestClient(app)
 
 
-def test_create_dummy_job_dispatches_task_and_returns_ids(client, mock_db, mocker):
-    def fake_refresh(image):
-        image.id = 1
-
-    mock_db.refresh.side_effect = fake_refresh
-
-    fake_async_result = MagicMock(id="fake-task-id")
-    mock_delay = mocker.patch(
-        "src.api.routes.jobs.sleep_and_update_status.delay",
-        return_value=fake_async_result,
+def test_create_dummy_job_delegates_to_service_and_returns_ids(client, mock_db, mocker):
+    mocker.patch(
+        "src.services.job_service.dispatch_dummy_job",
+        return_value=("fake-task-id", 1),
     )
 
     response = client.post("/jobs/dummy")
 
     assert response.status_code == 200
     assert response.json() == {"job_id": "fake-task-id", "image_id": 1}
-    mock_db.add.assert_called_once()
-    assert mock_db.commit.call_count == 2
-    mock_delay.assert_called_once_with(1)
 
 
 def test_get_dummy_job_status_returns_image(client, mock_db):
