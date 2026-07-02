@@ -14,6 +14,14 @@ API (FastAPI)
    :members:
    :undoc-members:
 
+.. automodule:: src.api.routes.jobs
+   :members:
+   :undoc-members:
+
+.. automodule:: src.api.routes.meta
+   :members:
+   :undoc-members:
+
 Worker (Celery)
 ---------------
 
@@ -27,6 +35,10 @@ Worker (Celery)
 
 Database
 --------
+
+.. automodule:: src.db.enums
+   :members:
+   :undoc-members:
 
 .. automodule:: src.db.models
    :members:

@@ -2,7 +2,9 @@ import os
 
 from celery import Celery
 
-REDIS_URL = os.environ.get("REDIS_URL", "redis://redis:6379/0")
+from src.db.enums import CeleryQueue
+
+REDIS_URL = os.environ["REDIS_URL"]
 
 celery_app = Celery(
     "diffpype",
@@ -12,5 +14,5 @@ celery_app = Celery(
 )
 
 celery_app.conf.task_routes = {
-    "src.worker.tasks.sleep_and_update_status": {"queue": "light"},
+    "src.worker.tasks.sleep_and_update_status": {"queue": CeleryQueue.LIGHT},
 }

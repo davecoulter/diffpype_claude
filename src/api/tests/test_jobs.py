@@ -29,7 +29,8 @@ def test_create_dummy_job_dispatches_task_and_returns_ids(client, mock_db, mocke
 
     fake_async_result = MagicMock(id="fake-task-id")
     mock_delay = mocker.patch(
-        "src.api.main.sleep_and_update_status.delay", return_value=fake_async_result
+        "src.api.routes.jobs.sleep_and_update_status.delay",
+        return_value=fake_async_result,
     )
 
     response = client.post("/jobs/dummy")
@@ -42,12 +43,12 @@ def test_create_dummy_job_dispatches_task_and_returns_ids(client, mock_db, mocke
 
 
 def test_get_dummy_job_status_returns_image(client, mock_db):
-    mock_db.get.return_value = DummyImage(id=5, status="Success", latest_job_id="task-123")
+    mock_db.get.return_value = DummyImage(id=5, status="complete", latest_job_id="task-123")
 
     response = client.get("/jobs/dummy/5")
 
     assert response.status_code == 200
-    assert response.json() == {"id": 5, "status": "Success", "latest_job_id": "task-123"}
+    assert response.json() == {"id": 5, "status": "complete", "latest_job_id": "task-123"}
 
 
 def test_get_dummy_job_status_404_when_missing(client, mock_db):

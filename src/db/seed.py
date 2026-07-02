@@ -1,9 +1,10 @@
-from src.db.models import Base, StepDefinition
-from src.db.session import SessionLocal, engine
+from src.db.enums import CeleryQueue
+from src.db.models import StepDefinition
+from src.db.session import SessionLocal
 
 
-def init_db() -> None:
-    Base.metadata.create_all(bind=engine)
+def seed_step_definitions() -> None:
+    """Insert the dummy StepDefinition row if it doesn't already exist."""
     db = SessionLocal()
     try:
         exists = (
@@ -16,7 +17,7 @@ def init_db() -> None:
                 StepDefinition(
                     name="dummy_sleep",
                     task_name="src.worker.tasks.sleep_and_update_status",
-                    queue="light",
+                    queue=CeleryQueue.LIGHT,
                 )
             )
             db.commit()

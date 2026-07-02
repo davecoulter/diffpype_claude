@@ -1,16 +1,18 @@
 services:
   db:
-    image: postgres:16-alpine
+    build:
+      context: .
+      dockerfile: docker/db.Dockerfile
     environment:
-      POSTGRES_USER: ${POSTGRES_USER:-diffpype}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-diffpype}
-      POSTGRES_DB: ${POSTGRES_DB:-diffpype}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - diffpype_db_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-diffpype}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -34,8 +36,9 @@ services:
       context: .
       dockerfile: docker/api.Dockerfile
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-diffpype}:${POSTGRES_PASSWORD:-diffpype}@db:5432/${POSTGRES_DB:-diffpype}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
+      TEST_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/diffpype_test
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
@@ -53,7 +56,7 @@ services:
       context: .
       dockerfile: docker/worker.Dockerfile
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER:-diffpype}:${POSTGRES_PASSWORD:-diffpype}@db:5432/${POSTGRES_DB:-diffpype}
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
     volumes:
       - ./src:/app/src
@@ -69,9 +72,9 @@ services:
     image: mher/flower:2.0.1
     environment:
       CELERY_BROKER_URL: redis://redis:6379/0
-      FLOWER_PORT: 5555
+      FLOWER_PORT: ${FLOWER_PORT:-5555}
     ports:
-      - "5555:5555"
+      - "${FLOWER_PORT:-5555}:5555"
     depends_on:
       redis:
         condition: service_healthy
