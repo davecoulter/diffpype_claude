@@ -7,6 +7,8 @@ from src.api.main import app
 from src.db.models import DummyImage
 from src.db.session import get_db
 
+VALID_PAYLOAD = {"task_name": "dummy_sleep", "config": {"sleep_duration": 5}}
+
 
 @pytest.fixture
 def mock_db():
@@ -27,10 +29,26 @@ def test_create_dummy_job_delegates_to_service_and_returns_ids(client, mock_db, 
         return_value=("fake-task-id", 1),
     )
 
-    response = client.post("/jobs/dummy")
+    response = client.post("/jobs/dummy", json=VALID_PAYLOAD)
 
     assert response.status_code == 200
     assert response.json() == {"job_id": "fake-task-id", "image_id": 1}
+
+
+def test_create_dummy_job_rejects_sleep_duration_above_max(client):
+    response = client.post(
+        "/jobs/dummy",
+        json={"task_name": "dummy_sleep", "config": {"sleep_duration": 11}},
+    )
+    assert response.status_code == 422
+
+
+def test_create_dummy_job_rejects_sleep_duration_below_min(client):
+    response = client.post(
+        "/jobs/dummy",
+        json={"task_name": "dummy_sleep", "config": {"sleep_duration": 0}},
+    )
+    assert response.status_code == 422
 
 
 def test_get_dummy_job_status_returns_image(client, mock_db):

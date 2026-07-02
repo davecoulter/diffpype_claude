@@ -44,3 +44,4 @@ class DummyImage(Base):
         default=JobStatus.PENDING,
     )
     latest_job_id: Mapped[str | None] = mapped_column(sa.String, nullable=True)
+    job_kwargs: Mapped[dict | None] = mapped_column(sa.JSON, nullable=True)

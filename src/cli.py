@@ -10,13 +10,15 @@ def cmd_seed_db(_: argparse.Namespace) -> None:
     print("Done.")
 
 
-def cmd_run_dummy(_: argparse.Namespace) -> None:
+def cmd_run_dummy(args: argparse.Namespace) -> None:
     from src.db.session import SessionLocal
     from src.services import job_service
 
+    config = {"sleep_duration": args.sleep}
+
     db = SessionLocal()
     try:
-        job_id, image_id = job_service.dispatch_dummy_job(db)
+        job_id, image_id = job_service.dispatch_dummy_job(db, config)
     finally:
         db.close()
 
@@ -32,7 +34,17 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers.required = True
 
     subparsers.add_parser("seed-db", help="Seed foundational records into the database.")
-    subparsers.add_parser("run-dummy", help="Dispatch a dummy Celery job and print the job ID.")
+
+    run_dummy = subparsers.add_parser(
+        "run-dummy", help="Dispatch a dummy Celery job and print the job ID."
+    )
+    run_dummy.add_argument(
+        "--sleep",
+        type=int,
+        default=5,
+        metavar="SECONDS",
+        help="Sleep duration in seconds (1-10, default 5).",
+    )
 
     return parser
 

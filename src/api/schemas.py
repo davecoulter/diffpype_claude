@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from src.db.enums import JobStatus
 
@@ -20,3 +20,16 @@ class StatusMetadata(BaseModel):
     value: str
     label: str
     color: str
+
+
+class BaseJobConfig(BaseModel):
+    pass
+
+
+class DummyJobConfig(BaseJobConfig):
+    sleep_duration: int = Field(default=5, ge=1, le=10)
+
+
+class JobSubmitRequest(BaseModel):
+    task_name: str
+    config: DummyJobConfig

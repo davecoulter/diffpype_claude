@@ -4,6 +4,7 @@ These tests validate that:
   - Alembic migrations materialize the correct Postgres enum types and tables.
   - SQLAlchemy ORM enum mappings round-trip correctly through the database.
   - Status transitions write and read back the expected Python enum instances.
+  - The job_kwargs JSON column stores and retrieves configuration dicts correctly.
 """
 from sqlalchemy import text
 
@@ -62,3 +63,22 @@ def test_all_job_status_transitions(db):
         db.add(image)
         db.flush()
         assert db.get(DummyImage, image.id).status == status
+
+
+def test_dummy_image_job_kwargs_roundtrip(db):
+    config = {"sleep_duration": 7}
+    image = DummyImage(status=JobStatus.IN_PROCESS, job_kwargs=config)
+    db.add(image)
+    db.flush()
+
+    fetched = db.get(DummyImage, image.id)
+    assert fetched.job_kwargs == {"sleep_duration": 7}
+
+
+def test_dummy_image_job_kwargs_nullable(db):
+    image = DummyImage(status=JobStatus.PENDING)
+    db.add(image)
+    db.flush()
+
+    fetched = db.get(DummyImage, image.id)
+    assert fetched.job_kwargs is None

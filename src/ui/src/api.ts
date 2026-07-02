@@ -18,7 +18,14 @@ export interface StatusMetadata {
 }
 
 export async function createDummyJob(): Promise<JobDispatchResponse> {
-  const response = await fetch(`${API_URL}/jobs/dummy`, { method: "POST" });
+  const response = await fetch(`${API_URL}/jobs/dummy`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      task_name: "dummy_sleep",
+      config: { sleep_duration: 5 },
+    }),
+  });
   if (!response.ok) throw new Error(`Failed to create dummy job: ${response.status}`);
   return response.json();
 }

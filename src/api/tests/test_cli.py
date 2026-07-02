@@ -14,6 +14,12 @@ def test_parser_recognises_seed_db_command():
 def test_parser_recognises_run_dummy_command():
     args = build_parser().parse_args(["run-dummy"])
     assert args.command == "run-dummy"
+    assert args.sleep == 5
+
+
+def test_run_dummy_accepts_custom_sleep_arg():
+    args = build_parser().parse_args(["run-dummy", "--sleep", "3"])
+    assert args.sleep == 3
 
 
 def test_missing_command_exits():
@@ -47,7 +53,7 @@ def test_cmd_seed_db_logs_to_stdout(mocker, capsys):
     assert "Done" in out
 
 
-def test_cmd_run_dummy_calls_dispatch_and_closes_session(mocker):
+def test_cmd_run_dummy_calls_dispatch_with_config_and_closes_session(mocker):
     mock_dispatch = mocker.patch(
         "src.services.job_service.dispatch_dummy_job",
         return_value=("fake-job-id", 42),
@@ -55,9 +61,9 @@ def test_cmd_run_dummy_calls_dispatch_and_closes_session(mocker):
     mock_session = MagicMock()
     mocker.patch("src.db.session.SessionLocal", return_value=mock_session)
 
-    cmd_run_dummy(argparse.Namespace(command="run-dummy"))
+    cmd_run_dummy(argparse.Namespace(command="run-dummy", sleep=3))
 
-    mock_dispatch.assert_called_once_with(mock_session)
+    mock_dispatch.assert_called_once_with(mock_session, {"sleep_duration": 3})
     mock_session.close.assert_called_once()
 
 
@@ -68,7 +74,7 @@ def test_cmd_run_dummy_logs_job_id_to_stdout(mocker, capsys):
     )
     mocker.patch("src.db.session.SessionLocal", return_value=MagicMock())
 
-    cmd_run_dummy(argparse.Namespace(command="run-dummy"))
+    cmd_run_dummy(argparse.Namespace(command="run-dummy", sleep=5))
 
     out = capsys.readouterr().out
     assert "abc-123" in out

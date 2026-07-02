@@ -4,6 +4,8 @@ from src.db.enums import JobStatus
 from src.db.models import DummyImage
 from src.services.job_service import dispatch_dummy_job
 
+CONFIG = {"sleep_duration": 5}
+
 
 def test_dispatch_dummy_job_creates_image_commits_and_returns_ids(mocker):
     mock_db = MagicMock()
@@ -19,13 +21,13 @@ def test_dispatch_dummy_job_creates_image_commits_and_returns_ids(mocker):
         return_value=fake_result,
     )
 
-    job_id, image_id = dispatch_dummy_job(mock_db)
+    job_id, image_id = dispatch_dummy_job(mock_db, CONFIG)
 
     assert job_id == "test-task-id"
     assert image_id == 99
     mock_db.add.assert_called_once()
     assert mock_db.commit.call_count == 2
-    mock_delay.assert_called_once_with(99)
+    mock_delay.assert_called_once_with(99, 5)
 
 
 def test_dispatch_dummy_job_sets_in_process_status(mocker):
@@ -36,11 +38,25 @@ def test_dispatch_dummy_job_sets_in_process_status(mocker):
         return_value=MagicMock(id="some-id"),
     )
 
-    dispatch_dummy_job(mock_db)
+    dispatch_dummy_job(mock_db, CONFIG)
 
     added_image = mock_db.add.call_args[0][0]
     assert isinstance(added_image, DummyImage)
     assert added_image.status == JobStatus.IN_PROCESS
+
+
+def test_dispatch_dummy_job_stores_config_in_job_kwargs(mocker):
+    mock_db = MagicMock()
+    mock_db.refresh.side_effect = lambda obj: setattr(obj, "id", 2)
+    mocker.patch(
+        "src.services.job_service.sleep_and_update_status.delay",
+        return_value=MagicMock(id="x"),
+    )
+
+    dispatch_dummy_job(mock_db, CONFIG)
+
+    added_image = mock_db.add.call_args[0][0]
+    assert added_image.job_kwargs == CONFIG
 
 
 def test_dispatch_dummy_job_stores_task_id_on_image(mocker):
@@ -51,7 +67,20 @@ def test_dispatch_dummy_job_stores_task_id_on_image(mocker):
         return_value=MagicMock(id="stored-task-id"),
     )
 
-    dispatch_dummy_job(mock_db)
+    dispatch_dummy_job(mock_db, CONFIG)
 
     added_image = mock_db.add.call_args[0][0]
     assert added_image.latest_job_id == "stored-task-id"
+
+
+def test_dispatch_dummy_job_passes_sleep_duration_to_task(mocker):
+    mock_db = MagicMock()
+    mock_db.refresh.side_effect = lambda obj: setattr(obj, "id", 7)
+    mock_delay = mocker.patch(
+        "src.services.job_service.sleep_and_update_status.delay",
+        return_value=MagicMock(id="y"),
+    )
+
+    dispatch_dummy_job(mock_db, {"sleep_duration": 3})
+
+    mock_delay.assert_called_once_with(7, 3)

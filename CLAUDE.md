@@ -19,6 +19,8 @@ Claude may only suggest packages or write code that aligns with this strict base
 *   **Definition of Done:** All implementations require an explicit Verification Plan containing deterministic commands (e.g., linters, build checks, test runs) to define when a task is complete.
 *   **Sphinx Documentation Mandate:** Any newly created Python business logic module must be added to `docs/index.rst` using the `.. automodule::` directive before the implementation is considered complete. The Sphinx build (`sphinx-build -b html docs docs/_build/html -W`) must pass with zero warnings.
 *   **Environment Variable Synchronization:** Whenever an environment variable is added, modified, or removed, the change must be perfectly synchronized across both `.env.example` and the local `.env` file. These two files must always be identical in their set of keys.
+*   **Model Evaluation Phase:** Before executing the instructions in any architectural markdown file, Claude must first analyze the complexity of the request, recommend the optimal model for the task (e.g., Opus for complex architectural refactoring, Sonnet for standard coding, Haiku for simple documentation), and explicitly **pause for human authorization** before proceeding. Once the task is completed, Claude must remind the user to remind the user to revert to the standard model.
+*   **Command Authorization Rule:** Claude is explicitly authorized to autonomously execute standard, non-destructive development commands (e.g., `uv sync`, `uv lock`, `pytest`, `docker compose build`, `docker compose up`, `docker compose down`) without pausing for human authorization. **Note:** Destructive commands that wipe data volumes (e.g., `docker compose down -v`) strictly require human authorization. 
 
 ### Directory References
 *   **Product Requirements:** Refer to `docs/prd.md` for overarching workflows.
@@ -27,3 +29,6 @@ Claude may only suggest packages or write code that aligns with this strict base
 
 ### Clarifications & Logs
 *(Claude will append a running log of global architecture decisions and ask clarifying questions here.)*
+
+###### 2026-07-02
+*   **Action:** Added Model Evaluation Phase and Command Authorization Rule to Guardrails for Agentic Coding to optimize model usage and whitelist non-destructive commands.
