@@ -13,4 +13,5 @@ COPY alembic.ini ./
 COPY migrations/ ./migrations/
 COPY src ./src
 
-CMD ["celery", "-A", "src.worker.celery_app", "worker", "--loglevel=info", "-Q", "light"]
+# Shell form so that CELERY_* env vars are expanded at container start time.
+CMD ["sh", "-c", "celery -A src.worker.celery_app worker --loglevel=info -Q ${CELERY_QUEUES:-light} -c ${CELERY_CONCURRENCY:-2} --max-memory-per-child=${CELERY_MAX_MEMORY_PER_CHILD:-200000}"]

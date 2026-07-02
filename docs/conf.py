@@ -3,6 +3,11 @@ import sys
 
 sys.path.insert(0, os.path.abspath(".."))
 
+# Provide dummy values so modules that read env vars at import time don't
+# crash during the Sphinx autodoc import phase. No real connections are made.
+os.environ.setdefault("DATABASE_URL", "postgresql+psycopg2://sphinx:sphinx@localhost/sphinx")
+os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+
 project = "Diffpype"
 copyright = "2026, STScI"
 author = "Dave Coulter"

@@ -51,13 +51,44 @@ services:
     networks:
       - diffpype_net
 
-  worker:
+  worker_light:
     build:
       context: .
       dockerfile: docker/worker.Dockerfile
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
+      CELERY_QUEUES: light
+      CELERY_CONCURRENCY: ${CELERY_LIGHT_CONCURRENCY:-4}
+      CELERY_MAX_MEMORY_PER_CHILD: ${CELERY_LIGHT_MAX_MEMORY_PER_CHILD:-200000}
+    deploy:
+      resources:
+        limits:
+          memory: ${WORKER_LIGHT_MEM_LIMIT:-512m}
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - diffpype_net
+
+  worker_heavy:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    environment:
+      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      CELERY_QUEUES: heavy_memory
+      CELERY_CONCURRENCY: ${CELERY_HEAVY_CONCURRENCY:-1}
+      CELERY_MAX_MEMORY_PER_CHILD: ${CELERY_HEAVY_MAX_MEMORY_PER_CHILD:-8000000}
+    deploy:
+      resources:
+        limits:
+          memory: ${WORKER_HEAVY_MEM_LIMIT:-8g}
     volumes:
       - ./src:/app/src
     depends_on:
@@ -78,6 +109,16 @@ services:
     depends_on:
       redis:
         condition: service_healthy
+    networks:
+      - diffpype_net
+
+  portainer:
+    image: portainer/portainer-ce:latest
+    ports:
+      - "${PORTAINER_PORT:-9000}:9000"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - portainer_data:/data
     networks:
       - diffpype_net
 
@@ -104,3 +145,4 @@ networks:
 volumes:
   diffpype_db_data:
   diffpype_ui_node_modules:
+  portainer_data:

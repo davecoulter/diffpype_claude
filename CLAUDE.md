@@ -17,6 +17,8 @@ Claude may only suggest packages or write code that aligns with this strict base
 *   **Test-Driven Development (TDD):** Every business logic function must be paired with an isolated unit test module. Code updates are not complete until the test suite passes at 100%. All logic must be completely isolated using Dependency Injection (mocking S3, API, and DB inputs via `pytest-mock`).
 *   **Containerized Isolation:** The workspace utilizes a local Dockerfile and docker-compose.yml to sandbox dependencies, preventing host environment mutations.
 *   **Definition of Done:** All implementations require an explicit Verification Plan containing deterministic commands (e.g., linters, build checks, test runs) to define when a task is complete.
+*   **Sphinx Documentation Mandate:** Any newly created Python business logic module must be added to `docs/index.rst` using the `.. automodule::` directive before the implementation is considered complete. The Sphinx build (`sphinx-build -b html docs docs/_build/html -W`) must pass with zero warnings.
+*   **Environment Variable Synchronization:** Whenever an environment variable is added, modified, or removed, the change must be perfectly synchronized across both `.env.example` and the local `.env` file. These two files must always be identical in their set of keys.
 
 ### Directory References
 *   **Product Requirements:** Refer to `docs/prd.md` for overarching workflows.
