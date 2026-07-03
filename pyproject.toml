@@ -12,6 +12,7 @@ dependencies = [
     "pydantic==2.9.2",
     "alembic==1.13.3",
     "healpix-alchemy==1.0.1",
+    "structlog==24.4.0",
 ]
 
 [project.scripts]

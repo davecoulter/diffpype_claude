@@ -1,5 +1,7 @@
 from unittest.mock import MagicMock
 
+from structlog.contextvars import bind_contextvars
+
 from src.db.enums import JobStatus
 from src.db.models import DummyImage
 from src.services.job_service import dispatch_dummy_job
@@ -27,7 +29,7 @@ def test_dispatch_dummy_job_creates_image_commits_and_returns_ids(mocker):
     assert image_id == 99
     mock_db.add.assert_called_once()
     assert mock_db.commit.call_count == 2
-    mock_delay.assert_called_once_with(99, 5)
+    mock_delay.assert_called_once_with(99, 5, correlation_id=None)
 
 
 def test_dispatch_dummy_job_sets_in_process_status(mocker):
@@ -83,4 +85,18 @@ def test_dispatch_dummy_job_passes_sleep_duration_to_task(mocker):
 
     dispatch_dummy_job(mock_db, {"sleep_duration": 3})
 
-    mock_delay.assert_called_once_with(7, 3)
+    mock_delay.assert_called_once_with(7, 3, correlation_id=None)
+
+
+def test_dispatch_dummy_job_forwards_bound_correlation_id(mocker):
+    mock_db = MagicMock()
+    mock_db.refresh.side_effect = lambda obj: setattr(obj, "id", 8)
+    mock_delay = mocker.patch(
+        "src.services.job_service.sleep_and_update_status.delay",
+        return_value=MagicMock(id="z"),
+    )
+    bind_contextvars(correlation_id="cid-xyz")
+
+    dispatch_dummy_job(mock_db, CONFIG)
+
+    mock_delay.assert_called_once_with(8, 5, correlation_id="cid-xyz")

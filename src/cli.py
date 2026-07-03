@@ -10,6 +10,21 @@ def cmd_seed_db(_: argparse.Namespace) -> None:
     print("Done.")
 
 
+def cmd_reset_db(_: argparse.Namespace) -> None:
+    from alembic import command
+    from alembic.config import Config
+
+    cfg = Config("alembic.ini")
+
+    print("Resetting database: downgrading to base (dropping all tables)...")
+    command.downgrade(cfg, "base")
+
+    print("Rebuilding schema: upgrading to head...")
+    command.upgrade(cfg, "head")
+
+    print("Done. Database schema reset.")
+
+
 def cmd_run_dummy(args: argparse.Namespace) -> None:
     from src.db.session import SessionLocal
     from src.services import job_service
@@ -35,6 +50,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("seed-db", help="Seed foundational records into the database.")
 
+    subparsers.add_parser(
+        "reset-db",
+        help="Drop all tables and rebuild the schema from Alembic migrations.",
+    )
+
     run_dummy = subparsers.add_parser(
         "run-dummy", help="Dispatch a dummy Celery job and print the job ID."
     )
@@ -55,6 +75,8 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "seed-db":
         cmd_seed_db(args)
+    elif args.command == "reset-db":
+        cmd_reset_db(args)
     elif args.command == "run-dummy":
         cmd_run_dummy(args)
 

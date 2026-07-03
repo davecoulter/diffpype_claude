@@ -3,6 +3,13 @@ Diffpype
 
 Diffpype is a distributed astronomical data-reduction and difference-imaging pipeline built on FastAPI, Celery, and PostgreSQL.
 
+Core
+----
+
+.. automodule:: src.core.logger
+   :members:
+   :undoc-members:
+
 CLI
 ---
 
@@ -40,6 +47,10 @@ Worker (Celery)
 ---------------
 
 .. automodule:: src.worker.celery_app
+   :members:
+   :undoc-members:
+
+.. automodule:: src.worker.base_task
    :members:
    :undoc-members:
 
