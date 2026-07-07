@@ -1,6 +1,7 @@
 import subprocess
 import time
 
+from sqlalchemy import func
 from structlog.contextvars import bind_contextvars
 
 from src.core.logger import get_logger
@@ -20,12 +21,23 @@ def sleep_and_update_status(
     log = get_logger()
     log.info("task_started", image_id=image_id, sleep_duration=sleep_duration)
 
+    # Record the start time in its own short transaction so we do not hold a
+    # database connection open across the (potentially long) sleep.
+    db = SessionLocal()
+    try:
+        image = db.get(DummyImage, image_id)
+        image.job_started_at = func.now()
+        db.commit()
+    finally:
+        db.close()
+
     time.sleep(sleep_duration)
 
     db = SessionLocal()
     try:
         image = db.get(DummyImage, image_id)
         image.status = JobStatus.COMPLETE
+        image.job_finished_at = func.now()
         db.commit()
     finally:
         db.close()

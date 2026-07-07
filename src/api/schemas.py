@@ -1,3 +1,5 @@
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 from src.db.enums import JobStatus
@@ -12,6 +14,9 @@ class DummyImageStatus(BaseModel):
     id: int
     status: JobStatus
     latest_job_id: str | None
+    created_at: datetime | None = None
+    job_started_at: datetime | None = None
+    job_finished_at: datetime | None = None
 
     model_config = {"from_attributes": True}
 

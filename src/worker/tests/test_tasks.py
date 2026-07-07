@@ -15,18 +15,37 @@ def _make_session(mocker, fake_image=None):
     return mock_session
 
 
-def test_sleep_and_update_status_marks_image_complete(mocker):
+def test_sleep_and_update_status_marks_image_complete_and_stamps_times(mocker):
     mock_sleep = mocker.patch("src.worker.tasks.time.sleep")
+    mocker.patch("src.worker.tasks.func.now", return_value="NOW")
     fake_image = MagicMock(status=JobStatus.IN_PROCESS)
     mock_session = _make_session(mocker, fake_image)
 
     sleep_and_update_status(42, 3, correlation_id="cid-1")
 
     mock_sleep.assert_called_once_with(3)
-    mock_session.get.assert_called_once_with(DummyImage, 42)
+    assert mock_session.get.call_count == 2
+    mock_session.get.assert_called_with(DummyImage, 42)
     assert fake_image.status == JobStatus.COMPLETE
-    mock_session.commit.assert_called_once()
-    mock_session.close.assert_called_once()
+    assert fake_image.job_started_at == "NOW"
+    assert fake_image.job_finished_at == "NOW"
+    # Two short transactions: the start-time write, then the completion write.
+    assert mock_session.commit.call_count == 2
+    assert mock_session.close.call_count == 2
+
+
+def test_sleep_and_update_status_records_start_before_sleeping(mocker):
+    """job_started_at must be committed before the sleep so a mid-run crash is recoverable."""
+    order = []
+    mocker.patch("src.worker.tasks.time.sleep", side_effect=lambda *_: order.append("sleep"))
+    mocker.patch("src.worker.tasks.func.now", return_value="NOW")
+    mock_session = _make_session(mocker)
+    mock_session.commit.side_effect = lambda: order.append("commit")
+
+    sleep_and_update_status(1, 1)
+
+    assert order[0] == "commit"
+    assert order.index("commit") < order.index("sleep")
 
 
 def test_sleep_and_update_status_uses_default_sleep_duration(mocker):

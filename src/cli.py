@@ -17,6 +17,24 @@ def _print_entity_table(entities: list) -> None:
     print(tabulate(rows, headers="keys", tablefmt="grid"))
 
 
+def _elapsed_label(image) -> str | None:
+    """Return a Run Time or Queue Time label derived from a DummyImage's timestamps."""
+    from datetime import datetime, timezone
+
+    def _fmt(delta) -> str:
+        total = max(0, int(delta.total_seconds()))
+        minutes, seconds = divmod(total, 60)
+        return f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
+
+    now = datetime.now(timezone.utc)
+    if image.job_started_at is not None:
+        end = image.job_finished_at or now
+        return f"Run Time: {_fmt(end - image.job_started_at)}"
+    if image.created_at is not None:
+        return f"Queue Time: {_fmt(now - image.created_at)}"
+    return None
+
+
 def cmd_seed_db(_: argparse.Namespace) -> None:
     """Insert the foundational StepDefinition records into the database."""
     from src.db.seed import seed_step_definitions
@@ -59,6 +77,9 @@ def cmd_get_dummy(args: argparse.Namespace) -> None:
         return
 
     _print_entity_table([image])
+    label = _elapsed_label(image)
+    if label:
+        print(label)
 
 
 def cmd_run_dummy(args: argparse.Namespace) -> None:

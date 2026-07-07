@@ -5,6 +5,31 @@ import { createDummyJob, getDummyJobStatus, getStatuses } from "../api";
 
 const TERMINAL = new Set(["complete", "failed"]);
 
+/** Format a millisecond duration as a compact "Xm Ys" / "Ys" string. */
+function formatDuration(ms: number): string {
+  const totalSeconds = Math.max(0, Math.floor(ms / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return minutes > 0 ? `${minutes}m ${seconds}s` : `${seconds}s`;
+}
+
+/** Derive the elapsed-time label to render for the current job status. */
+function elapsedLabel(job: {
+  created_at: string | null;
+  job_started_at: string | null;
+  job_finished_at: string | null;
+}): string | null {
+  if (job.job_started_at) {
+    const start = new Date(job.job_started_at).getTime();
+    const end = job.job_finished_at ? new Date(job.job_finished_at).getTime() : Date.now();
+    return `Run Time: ${formatDuration(end - start)}`;
+  }
+  if (job.created_at) {
+    return `Queue Time: ${formatDuration(Date.now() - new Date(job.created_at).getTime())}`;
+  }
+  return null;
+}
+
 export default function DashboardPage() {
   const [imageId, setImageId] = useState<number | null>(null);
 
@@ -51,6 +76,9 @@ export default function DashboardPage() {
         {status}
         {imageId !== null && ` (image #${imageId})`}
       </p>
+      {jobStatus && elapsedLabel(jobStatus) && (
+        <p style={{ color: "#555" }}>{elapsedLabel(jobStatus)}</p>
+      )}
       {error && (
         <p style={{ color: "#c62828" }}>Error: {(error as Error).message}</p>
       )}
