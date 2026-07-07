@@ -1,10 +1,11 @@
+import subprocess
 from unittest.mock import MagicMock
 
 import pytest
 
 from src.db.enums import JobStatus
-from src.db.models import DummyImage
-from src.worker.tasks import sleep_and_update_status
+from src.db.models import DummyImage, JobConfiguration
+from src.worker.tasks import execute_cli_tool, sleep_and_update_status
 
 
 def _make_session(mocker, fake_image=None):
@@ -47,3 +48,64 @@ def test_sleep_and_update_status_propagates_exception_and_closes_session(mocker)
         sleep_and_update_status(7, 2)
 
     mock_session.close.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# execute_cli_tool
+# ---------------------------------------------------------------------------
+
+
+def _make_cli_session(mocker, job_kwargs=None):
+    fake_config = MagicMock(spec=JobConfiguration, job_kwargs=job_kwargs or {"inim": "sci.fits"})
+    mock_session = MagicMock()
+    mock_session.get.return_value = fake_config
+    mocker.patch("src.worker.tasks.SessionLocal", return_value=mock_session)
+    return mock_session, fake_config
+
+
+def test_execute_cli_tool_calls_subprocess_with_correct_list(mocker):
+    mock_session, _ = _make_cli_session(mocker, {"inim": "sci.fits", "c": "t"})
+    mock_run = mocker.patch("src.worker.tasks.subprocess.run", return_value=MagicMock(stdout=""))
+
+    execute_cli_tool(1, "hotpants", correlation_id="cid-1")
+
+    mock_session.get.assert_called_once_with(JobConfiguration, 1)
+    mock_run.assert_called_once_with(
+        ["hotpants", "-inim", "sci.fits", "-c", "t"],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+
+def test_execute_cli_tool_saves_execution_command(mocker):
+    mock_session, fake_config = _make_cli_session(mocker, {"inim": "sci.fits"})
+    mocker.patch("src.worker.tasks.subprocess.run", return_value=MagicMock(stdout=""))
+
+    execute_cli_tool(2, "hotpants")
+
+    assert fake_config.execution_command == "hotpants -inim sci.fits"
+    mock_session.commit.assert_called_once()
+
+
+def test_execute_cli_tool_closes_session_on_subprocess_error(mocker):
+    mock_session, _ = _make_cli_session(mocker)
+    mocker.patch(
+        "src.worker.tasks.subprocess.run",
+        side_effect=subprocess.CalledProcessError(1, "hotpants"),
+    )
+
+    with pytest.raises(subprocess.CalledProcessError):
+        execute_cli_tool(3, "hotpants")
+
+    mock_session.close.assert_called_once()
+
+
+def test_execute_cli_tool_handles_none_job_kwargs(mocker):
+    mock_session, _ = _make_cli_session(mocker, None)
+    mock_session.get.return_value = MagicMock(spec=JobConfiguration, job_kwargs=None)
+    mock_run = mocker.patch("src.worker.tasks.subprocess.run", return_value=MagicMock(stdout=""))
+
+    execute_cli_tool(4, "mytool")
+
+    mock_run.assert_called_once_with(["mytool"], capture_output=True, text=True, check=True)

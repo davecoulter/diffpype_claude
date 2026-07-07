@@ -62,6 +62,10 @@ Worker (Celery)
    :members:
    :undoc-members:
 
+.. automodule:: src.worker.utils
+   :members:
+   :undoc-members:
+
 Database
 --------
 
