@@ -6,6 +6,10 @@ Diffpype is a distributed astronomical data-reduction and difference-imaging pip
 Core
 ----
 
+.. automodule:: src.core.config
+   :members:
+   :undoc-members:
+
 .. automodule:: src.core.logger
    :members:
    :undoc-members:
@@ -55,6 +59,10 @@ Worker (Celery)
    :undoc-members:
 
 .. automodule:: src.worker.tasks
+   :members:
+   :undoc-members:
+
+.. automodule:: src.worker.utils
    :members:
    :undoc-members:
 

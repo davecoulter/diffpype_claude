@@ -1,13 +1,15 @@
+import subprocess
 import time
 
 from structlog.contextvars import bind_contextvars
 
 from src.core.logger import get_logger
 from src.db.enums import JobStatus
-from src.db.models import DummyImage
+from src.db.models import DummyImage, JobConfiguration
 from src.db.session import SessionLocal
 from src.worker.base_task import DiffpypeTask
 from src.worker.celery_app import celery_app
+from src.worker.utils import build_cli_command
 
 
 @celery_app.task(base=DiffpypeTask, name="src.worker.tasks.sleep_and_update_status")
@@ -29,3 +31,25 @@ def sleep_and_update_status(
         db.close()
 
     log.info("task_completed", image_id=image_id)
+
+
+@celery_app.task(base=DiffpypeTask, name="src.worker.tasks.execute_cli_tool")
+def execute_cli_tool(
+    job_config_id: int, executable: str, correlation_id: str | None = None
+) -> None:
+    """Execute an external CLI tool using the kwargs stored in JobConfiguration."""
+    bind_contextvars(correlation_id=correlation_id)
+    log = get_logger()
+    log.info("execute_cli_tool_started", job_config_id=job_config_id, executable=executable)
+
+    db = SessionLocal()
+    try:
+        job_config = db.get(JobConfiguration, job_config_id)
+        cmd_list = build_cli_command(executable, job_config.job_kwargs or {})
+        job_config.execution_command = " ".join(cmd_list)
+        db.commit()
+
+        result = subprocess.run(cmd_list, capture_output=True, text=True, check=True)
+        log.info("execute_cli_tool_completed", job_config_id=job_config_id, stdout=result.stdout)
+    finally:
+        db.close()

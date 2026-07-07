@@ -15,3 +15,7 @@ docs/_build/
 data/
 *.fits
 **/.DS_Store
+
+# Test coverage artifacts
+.coverage
+htmlcov/

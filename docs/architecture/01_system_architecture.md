@@ -5,7 +5,7 @@
 ### Preamble
 This document dictates the technical implementation, component wiring, and strict API boundaries for the Diffpype system. It defines *how* the workflows in `docs/prd.md` will be executed using the tech stack mandated by `CLAUDE.md`. 
 
-##### System Components & Boundaries
+### System Components & Boundaries
 The system is divided into rigidly isolated layers to enforce testability and scalability, utilizing a Shared Service Layer pattern:
 *   **Shared Service Layer:** The core Python modules (e.g., `src/services/`) that house all business logic. This layer accepts database sessions via dependency injection, mutates database state, generates S3 pre-signed URLs, and dispatches Celery DAGs. 
 *   **API Boundary (FastAPI):** Acts as the thin HTTP entry point for the React Web UI. It uses Pydantic for strict I/O validation, but contains zero business logic, strictly delegating execution to the Shared Service Layer.
@@ -17,11 +17,21 @@ The system is divided into rigidly isolated layers to enforce testability and sc
 *   **Blob Storage (S3-Compatible):** The sole storage layer for all interstitial files (FITS images, catalogs). Configured dynamically via Docker environment variables.
 *   **Frontend (React):** A thin visualization layer utilizing unidirectional state flow. Features a traffic-light status grid. Integrates fitsmap for low-latency image visualization by fetching assets directly from S3 via pre-signed URLs.
 
+### API Boundary Philosophy (Entity Separation)
+Diffpype strictly separates API Boundary models (Pydantic) from Data Entity models (SQLAlchemy). ORM objects must never be exposed directly to or populated directly from the API router. This deliberate separation prevents mass-assignment security vulnerabilities, stops internal database state from leaking to the frontend, and allows the SQLAlchemy models to utilize complex low-level extensions (like `Q3C` spatial indexing and `healpix-alchemy`) without conflicting with serialization logic.
+
+
 ### S3 Execution & Storage Optimization Strategy
 To minimize the storage footprint while preserving a stateless, cloud-native architecture, Diffpype relies on database-driven logical mapping rather than binary duplication.
 *   **Logical Symlinks:** If a pipeline operation changes a file's state or naming convention without altering the binary pixel data, the worker does not duplicate the object in S3. Instead, FastAPI/Celery creates a new database entity that points to the existing S3 key.
 *   **Ephemeral Worker I/O & Memory Management:** To prevent Out-Of-Memory (OOM) crashes on large mosaicing operations, workers do not stream heavy arrays directly into memory. Workers download required S3 objects to an ephemeral local container volume (`/scratch`). Algorithms process the files from this local disk utilizing memory-mapping or chunked lazy-loading. Genuine new binaries are uploaded back to S3, and the local scratch space is immediately wiped.
 *   **Frontend File Serving (Pre-signed URLs):** FastAPI never serves heavy binary files directly to the React frontend. When the UI requests an image for `fitsmap`, FastAPI generates a temporary, pre-signed S3 URL. The React client uses this URL to download the FITS file directly from the S3 bucket, bypassing the API entirely.
+
+### Deployment & Environment Strategy (3-Tier)
+Diffpype utilizes a strict 3-tier environment strategy governed by GitHub Flow and automated CI/CD pipelines:
+*   **Dev (Local):** An ephemeral Docker Compose sandbox. Developers can freely mutate data, wipe volumes, and rebuild using `diffpype-manage reset-db` and database seeding.
+*   **Test (Remote Staging):** A remote environment tracking the `main` branch. When a Pull Request is merged, CI/CD automatically builds and pushes images tagged as `:main` to the GitHub Container Registry (`ghcr.io`) for this environment to pull. To ensure realistic testing, this database is periodically hydrated with backups from the Production environment.
+*   **Prod (Remote):** The live production system. It strictly tracks formal Git Tags (e.g., `v1.0.0`). Merges to `main` do *not* trigger production deployments. A production release is triggered manually, deploying the immutable, tagged `ghcr.io` images.
 
 ### Worker Routing & Hardware Constraints
 Because tasks vary wildly in their computational and environmental needs, Celery tasks are explicitly routed to specialized queues. This allows specific Docker worker containers to subscribe only to the jobs they are provisioned to handle:

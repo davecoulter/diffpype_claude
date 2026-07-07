@@ -4,12 +4,12 @@ These tests validate that:
   - Alembic migrations materialize the correct Postgres enum types and tables.
   - SQLAlchemy ORM enum mappings round-trip correctly through the database.
   - Status transitions write and read back the expected Python enum instances.
-  - The job_kwargs JSON column stores and retrieves configuration dicts correctly.
+  - The JobConfiguration table and its relationship to DummyImage round-trip correctly.
 """
 from sqlalchemy import text
 
 from src.db.enums import CeleryQueue, JobStatus
-from src.db.models import DummyImage, StepDefinition
+from src.db.models import DummyImage, JobConfiguration, StepDefinition
 
 
 def test_job_status_enum_type_exists_in_db(db):
@@ -65,20 +65,41 @@ def test_all_job_status_transitions(db):
         assert db.get(DummyImage, image.id).status == status
 
 
-def test_dummy_image_job_kwargs_roundtrip(db):
-    config = {"sleep_duration": 7}
-    image = DummyImage(status=JobStatus.IN_PROCESS, job_kwargs=config)
+def test_job_configuration_roundtrip(db):
+    config = JobConfiguration(
+        job_kwargs={"sleep_duration": 7},
+        execution_command="diffpype-manage run-dummy --sleep 7",
+    )
+    db.add(config)
+    db.flush()
+
+    fetched = db.get(JobConfiguration, config.id)
+    assert fetched.job_kwargs == {"sleep_duration": 7}
+    assert fetched.execution_command == "diffpype-manage run-dummy --sleep 7"
+
+
+def test_dummy_image_job_configuration_relationship(db):
+    config = JobConfiguration(
+        job_kwargs={"sleep_duration": 3},
+        execution_command="diffpype-manage run-dummy --sleep 3",
+    )
+    image = DummyImage(status=JobStatus.IN_PROCESS, job_configuration=config)
     db.add(image)
     db.flush()
 
     fetched = db.get(DummyImage, image.id)
-    assert fetched.job_kwargs == {"sleep_duration": 7}
+    # Forward relationship: image -> its configuration.
+    assert fetched.job_configuration_id == config.id
+    assert fetched.job_configuration.job_kwargs == {"sleep_duration": 3}
+    # Back-populated relationship: configuration -> its images.
+    assert fetched in config.dummy_images
 
 
-def test_dummy_image_job_kwargs_nullable(db):
+def test_dummy_image_job_configuration_nullable(db):
     image = DummyImage(status=JobStatus.PENDING)
     db.add(image)
     db.flush()
 
     fetched = db.get(DummyImage, image.id)
-    assert fetched.job_kwargs is None
+    assert fetched.job_configuration_id is None
+    assert fetched.job_configuration is None

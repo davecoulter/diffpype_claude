@@ -3,6 +3,7 @@ import sys
 
 
 def cmd_seed_db(_: argparse.Namespace) -> None:
+    """Insert the foundational StepDefinition records into the database."""
     from src.db.seed import seed_step_definitions
 
     print("Seeding database: inserting foundational StepDefinition records...")
@@ -10,7 +11,8 @@ def cmd_seed_db(_: argparse.Namespace) -> None:
     print("Done.")
 
 
-def cmd_reset_db(_: argparse.Namespace) -> None:
+def cmd_reset_db(args: argparse.Namespace) -> None:
+    """Drop all tables, rebuild the schema from migrations, and re-seed foundational rows."""
     from alembic import command
     from alembic.config import Config
 
@@ -22,12 +24,21 @@ def cmd_reset_db(_: argparse.Namespace) -> None:
     print("Rebuilding schema: upgrading to head...")
     command.upgrade(cfg, "head")
 
-    print("Done. Database schema reset.")
+    print("Schema reset complete. Auto-seeding foundational records...")
+    cmd_seed_db(args)
 
 
 def cmd_run_dummy(args: argparse.Namespace) -> None:
+    """Dispatch a dummy Celery job through the service layer and print its identifiers."""
+    import uuid
+    from structlog.contextvars import bind_contextvars, clear_contextvars
+
     from src.db.session import SessionLocal
     from src.services import job_service
+
+    clear_contextvars()
+    correlation_id = str(uuid.uuid4())
+    bind_contextvars(correlation_id=correlation_id)
 
     config = {"sleep_duration": args.sleep}
 
@@ -37,10 +48,11 @@ def cmd_run_dummy(args: argparse.Namespace) -> None:
     finally:
         db.close()
 
-    print(f"Dispatched dummy job. job_id={job_id}, image_id={image_id}")
+    print(f"Dispatched dummy job. correlation_id={correlation_id}, job_id={job_id}, image_id={image_id}")
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Construct the argparse parser with all diffpype-manage subcommands."""
     parser = argparse.ArgumentParser(
         prog="diffpype-manage",
         description="DevOps CLI for Diffpype administrative tasks.",
@@ -70,6 +82,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse CLI arguments and dispatch to the matching command handler."""
     parser = build_parser()
     args = parser.parse_args(argv)
 

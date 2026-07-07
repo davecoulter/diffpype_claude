@@ -1,7 +1,6 @@
-import os
-
 from celery import Celery
 
+from src.core.config import settings
 from src.core.logger import configure_logging
 from src.db.enums import CeleryQueue
 
@@ -9,12 +8,10 @@ from src.db.enums import CeleryQueue
 # the service/task layer) so all components stream structured logs to stdout.
 configure_logging()
 
-REDIS_URL = os.environ["REDIS_URL"]
-
 celery_app = Celery(
     "diffpype",
-    broker=REDIS_URL,
-    backend=REDIS_URL,
+    broker=settings.redis_url,
+    backend=settings.redis_url,
     include=["src.worker.tasks"],
 )
 
