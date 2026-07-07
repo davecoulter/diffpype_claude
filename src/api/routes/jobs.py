@@ -2,7 +2,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from src.api.schemas import DummyImageStatus, JobDispatchResponse, JobSubmitRequest
-from src.db.models import DummyImage
 from src.db.session import get_db
 from src.services import job_service
 
@@ -19,7 +18,7 @@ def create_dummy_job(
 
 @router.get("/dummy/{image_id}", response_model=DummyImageStatus)
 def get_dummy_job_status(image_id: int, db: Session = Depends(get_db)) -> DummyImageStatus:
-    image = db.get(DummyImage, image_id)
+    image = job_service.get_dummy_job(db, image_id)
     if image is None:
         raise HTTPException(status_code=404, detail="DummyImage not found")
     return DummyImageStatus.model_validate(image)

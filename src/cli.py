@@ -2,6 +2,21 @@ import argparse
 import sys
 
 
+def _entity_to_dict(entity) -> dict:
+    """Serialize a SQLAlchemy ORM object or Pydantic model to a plain dictionary."""
+    if hasattr(entity, "model_dump"):
+        return entity.model_dump()
+    return {col.name: getattr(entity, col.name) for col in entity.__table__.columns}
+
+
+def _print_entity_table(entities: list) -> None:
+    """Print a list of domain entities or Pydantic models as an ASCII grid table."""
+    from tabulate import tabulate
+
+    rows = [_entity_to_dict(e) for e in entities]
+    print(tabulate(rows, headers="keys", tablefmt="grid"))
+
+
 def cmd_seed_db(_: argparse.Namespace) -> None:
     """Insert the foundational StepDefinition records into the database."""
     from src.db.seed import seed_step_definitions
@@ -26,6 +41,24 @@ def cmd_reset_db(args: argparse.Namespace) -> None:
 
     print("Schema reset complete. Auto-seeding foundational records...")
     cmd_seed_db(args)
+
+
+def cmd_get_dummy(args: argparse.Namespace) -> None:
+    """Fetch a DummyImage by ID from the database and print it as an ASCII table."""
+    from src.db.session import SessionLocal
+    from src.services import job_service
+
+    db = SessionLocal()
+    try:
+        image = job_service.get_dummy_job(db, args.id)
+    finally:
+        db.close()
+
+    if image is None:
+        print(f"Error: No DummyImage found with id={args.id}.")
+        return
+
+    _print_entity_table([image])
 
 
 def cmd_run_dummy(args: argparse.Namespace) -> None:
@@ -62,6 +95,17 @@ def build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("seed-db", help="Seed foundational records into the database.")
 
+    get_dummy = subparsers.add_parser(
+        "get-dummy", help="Fetch and display the status of a DummyImage by ID."
+    )
+    get_dummy.add_argument(
+        "--id",
+        type=int,
+        required=True,
+        metavar="ID",
+        help="The integer ID of the DummyImage to fetch.",
+    )
+
     subparsers.add_parser(
         "reset-db",
         help="Drop all tables and rebuild the schema from Alembic migrations.",
@@ -88,6 +132,8 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "seed-db":
         cmd_seed_db(args)
+    elif args.command == "get-dummy":
+        cmd_get_dummy(args)
     elif args.command == "reset-db":
         cmd_reset_db(args)
     elif args.command == "run-dummy":
