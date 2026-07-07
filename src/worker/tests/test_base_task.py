@@ -6,6 +6,7 @@ from src.worker.base_task import DiffpypeTask
 
 
 def test_on_failure_rolls_back_and_marks_failed(mocker):
+    mocker.patch("src.worker.base_task.func.now", return_value="NOW")
     fake_image = MagicMock(status=JobStatus.IN_PROCESS)
     mock_session = MagicMock()
     mock_session.get.return_value = fake_image
@@ -23,6 +24,7 @@ def test_on_failure_rolls_back_and_marks_failed(mocker):
     mock_session.rollback.assert_called_once()
     mock_session.get.assert_called_once_with(DummyImage, 7)
     assert fake_image.status == JobStatus.FAILED
+    assert fake_image.job_finished_at == "NOW"
     mock_session.commit.assert_called_once()
     mock_session.close.assert_called_once()
 

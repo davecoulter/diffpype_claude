@@ -103,3 +103,31 @@ def test_dummy_image_job_configuration_nullable(db):
     fetched = db.get(DummyImage, image.id)
     assert fetched.job_configuration_id is None
     assert fetched.job_configuration is None
+
+
+def test_dummy_image_timestamps_populated(db):
+    """The TimestampMixin server defaults populate created_at/updated_at on insert."""
+    image = DummyImage(status=JobStatus.PENDING)
+    db.add(image)
+    db.flush()
+    db.refresh(image)
+
+    assert image.created_at is not None
+    assert image.updated_at is not None
+    # job_started_at/job_finished_at remain null until the worker stamps them.
+    assert image.job_started_at is None
+    assert image.job_finished_at is None
+
+
+def test_job_configuration_timestamps_populated(db):
+    """The TimestampMixin server defaults populate created_at/updated_at on insert."""
+    config = JobConfiguration(
+        job_kwargs={"sleep_duration": 5},
+        execution_command="diffpype-manage run-dummy --sleep 5",
+    )
+    db.add(config)
+    db.flush()
+    db.refresh(config)
+
+    assert config.created_at is not None
+    assert config.updated_at is not None

@@ -7,6 +7,7 @@ domain entity to ``JobStatus.FAILED`` so downstream consumers (the polling UI)
 observe a terminal state instead of an orphaned ``in_process`` record.
 """
 import celery
+from sqlalchemy import func
 from structlog.contextvars import bind_contextvars
 
 from src.core.logger import get_logger
@@ -41,6 +42,7 @@ class DiffpypeTask(celery.Task):
             image = db.get(DummyImage, image_id)
             if image is not None:
                 image.status = JobStatus.FAILED
+                image.job_finished_at = func.now()
                 db.commit()
         finally:
             db.close()

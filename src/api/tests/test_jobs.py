@@ -60,7 +60,14 @@ def test_get_dummy_job_status_returns_image(client, mock_db, mocker):
     response = client.get("/jobs/dummy/5")
 
     assert response.status_code == 200
-    assert response.json() == {"id": 5, "status": "complete", "latest_job_id": "task-123"}
+    assert response.json() == {
+        "id": 5,
+        "status": "complete",
+        "latest_job_id": "task-123",
+        "created_at": None,
+        "job_started_at": None,
+        "job_finished_at": None,
+    }
 
 
 def test_get_dummy_job_status_404_when_missing(client, mock_db, mocker):

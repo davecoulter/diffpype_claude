@@ -9,6 +9,9 @@ export interface DummyImageStatus {
   id: number;
   status: string;
   latest_job_id: string | null;
+  created_at: string | null;
+  job_started_at: string | null;
+  job_finished_at: string | null;
 }
 
 export interface StatusMetadata {

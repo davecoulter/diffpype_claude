@@ -4,6 +4,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from src.cli import (
+    _elapsed_label,
     _entity_to_dict,
     _print_entity_table,
     build_parser,
@@ -39,7 +40,14 @@ def test_entity_to_dict_serializes_pydantic_model():
 
     result = _entity_to_dict(model)
 
-    assert result == {"id": 3, "status": "pending", "latest_job_id": None}
+    assert result == {
+        "id": 3,
+        "status": "pending",
+        "latest_job_id": None,
+        "created_at": None,
+        "job_started_at": None,
+        "job_finished_at": None,
+    }
 
 
 def test_print_entity_table_outputs_column_headers_and_values(mocker, capsys):
@@ -103,6 +111,65 @@ def test_cmd_get_dummy_closes_session(mocker):
     cmd_get_dummy(argparse.Namespace(command="get-dummy", id=1))
 
     mock_session.close.assert_called_once()
+
+
+def test_elapsed_label_run_time_when_finished():
+    from datetime import datetime, timedelta, timezone
+
+    start = datetime(2026, 7, 7, 12, 0, 0, tzinfo=timezone.utc)
+    image = MagicMock(
+        job_started_at=start,
+        job_finished_at=start + timedelta(seconds=75),
+        created_at=start,
+    )
+
+    assert _elapsed_label(image) == "Run Time: 1m 15s"
+
+
+def test_elapsed_label_run_time_when_still_running():
+    from datetime import datetime, timedelta, timezone
+
+    started = datetime.now(timezone.utc) - timedelta(seconds=5)
+    image = MagicMock(job_started_at=started, job_finished_at=None, created_at=started)
+
+    assert _elapsed_label(image).startswith("Run Time:")
+
+
+def test_elapsed_label_queue_time_when_pending():
+    from datetime import datetime, timedelta, timezone
+
+    created = datetime.now(timezone.utc) - timedelta(seconds=3)
+    image = MagicMock(job_started_at=None, job_finished_at=None, created_at=created)
+
+    assert _elapsed_label(image).startswith("Queue Time:")
+
+
+def test_elapsed_label_none_when_no_timestamps():
+    image = MagicMock(job_started_at=None, job_finished_at=None, created_at=None)
+
+    assert _elapsed_label(image) is None
+
+
+def test_cmd_get_dummy_prints_elapsed_run_time(mocker, capsys):
+    from datetime import datetime, timedelta, timezone
+
+    from src.db.models import DummyImage
+
+    start = datetime(2026, 7, 7, 12, 0, 0, tzinfo=timezone.utc)
+    fake_image = DummyImage(
+        id=5,
+        status="complete",
+        latest_job_id="abc-123",
+        job_started_at=start,
+        job_finished_at=start + timedelta(seconds=30),
+    )
+    mocker.patch("src.services.job_service.get_dummy_job", return_value=fake_image)
+    mocker.patch("src.db.session.SessionLocal", return_value=MagicMock())
+
+    cmd_get_dummy(argparse.Namespace(command="get-dummy", id=5))
+
+    out = capsys.readouterr().out
+    assert "Run Time: 30s" in out
 
 
 def test_parser_recognises_seed_db_command():

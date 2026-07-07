@@ -1,4 +1,6 @@
 """SQLAlchemy ORM models for Diffpype domain entities and job provenance."""
+from datetime import datetime
+
 import sqlalchemy as sa
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
@@ -9,6 +11,20 @@ class Base(DeclarativeBase):
     """Declarative base class for all Diffpype ORM models."""
 
     pass
+
+
+class TimestampMixin:
+    """Mixin adding server-managed created_at and updated_at provenance columns."""
+
+    created_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        sa.DateTime(timezone=True),
+        server_default=sa.func.now(),
+        onupdate=sa.func.now(),
+        nullable=False,
+    )
 
 
 class StepDefinition(Base):
@@ -31,7 +47,7 @@ class StepDefinition(Base):
     )
 
 
-class JobConfiguration(Base):
+class JobConfiguration(TimestampMixin, Base):
     """Normalized job provenance: the exact kwargs and shell command for a run."""
 
     __tablename__ = "job_configurations"
@@ -45,7 +61,7 @@ class JobConfiguration(Base):
     )
 
 
-class DummyImage(Base):
+class DummyImage(TimestampMixin, Base):
     """Stage 0 domain entity used only to prove status tracking end-to-end."""
 
     __tablename__ = "dummy_images"
@@ -62,6 +78,12 @@ class DummyImage(Base):
         default=JobStatus.PENDING,
     )
     latest_job_id: Mapped[str | None] = mapped_column(sa.String, nullable=True)
+    job_started_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
+    job_finished_at: Mapped[datetime | None] = mapped_column(
+        sa.DateTime(timezone=True), nullable=True
+    )
     job_configuration_id: Mapped[int | None] = mapped_column(
         sa.ForeignKey("job_configurations.id"), nullable=True
     )
