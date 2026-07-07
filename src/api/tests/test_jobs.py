@@ -51,8 +51,11 @@ def test_create_dummy_job_rejects_sleep_duration_below_min(client):
     assert response.status_code == 422
 
 
-def test_get_dummy_job_status_returns_image(client, mock_db):
-    mock_db.get.return_value = DummyImage(id=5, status="complete", latest_job_id="task-123")
+def test_get_dummy_job_status_returns_image(client, mock_db, mocker):
+    mocker.patch(
+        "src.services.job_service.get_dummy_job",
+        return_value=DummyImage(id=5, status="complete", latest_job_id="task-123"),
+    )
 
     response = client.get("/jobs/dummy/5")
 
@@ -60,8 +63,8 @@ def test_get_dummy_job_status_returns_image(client, mock_db):
     assert response.json() == {"id": 5, "status": "complete", "latest_job_id": "task-123"}
 
 
-def test_get_dummy_job_status_404_when_missing(client, mock_db):
-    mock_db.get.return_value = None
+def test_get_dummy_job_status_404_when_missing(client, mock_db, mocker):
+    mocker.patch("src.services.job_service.get_dummy_job", return_value=None)
 
     response = client.get("/jobs/dummy/999")
 

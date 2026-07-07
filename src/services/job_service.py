@@ -8,6 +8,11 @@ from src.db.models import DummyImage, JobConfiguration
 from src.worker.tasks import sleep_and_update_status
 
 
+def get_dummy_job(db: Session, image_id: int) -> DummyImage | None:
+    """Return the DummyImage with the given primary key, or None if not found."""
+    return db.get(DummyImage, image_id)
+
+
 def dispatch_dummy_job(db: Session, config: dict) -> tuple[str, int]:
     """Persist a JobConfiguration + DummyImage, dispatch the sleep task, return (job_id, image_id).
 

@@ -3,7 +3,106 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.cli import build_parser, cmd_reset_db, cmd_run_dummy, cmd_seed_db, main
+from src.cli import (
+    _entity_to_dict,
+    _print_entity_table,
+    build_parser,
+    cmd_get_dummy,
+    cmd_reset_db,
+    cmd_run_dummy,
+    cmd_seed_db,
+    main,
+)
+
+
+def test_entity_to_dict_serializes_sqlalchemy_object():
+    col_id = MagicMock()
+    col_id.name = "id"
+    col_status = MagicMock()
+    col_status.name = "status"
+    entity = MagicMock()
+    entity.__table__ = MagicMock()
+    entity.__table__.columns = [col_id, col_status]
+    entity.id = 7
+    entity.status = "complete"
+    del entity.model_dump  # ensure the ORM branch is taken
+
+    result = _entity_to_dict(entity)
+
+    assert result == {"id": 7, "status": "complete"}
+
+
+def test_entity_to_dict_serializes_pydantic_model():
+    from src.api.schemas import DummyImageStatus
+
+    model = DummyImageStatus(id=3, status="pending", latest_job_id=None)
+
+    result = _entity_to_dict(model)
+
+    assert result == {"id": 3, "status": "pending", "latest_job_id": None}
+
+
+def test_print_entity_table_outputs_column_headers_and_values(mocker, capsys):
+    col = MagicMock()
+    col.name = "id"
+    entity = MagicMock()
+    entity.__table__ = MagicMock()
+    entity.__table__.columns = [col]
+    entity.id = 42
+    del entity.model_dump
+
+    _print_entity_table([entity])
+
+    out = capsys.readouterr().out
+    assert "id" in out
+    assert "42" in out
+
+
+def test_parser_recognises_get_dummy_command():
+    args = build_parser().parse_args(["get-dummy", "--id", "5"])
+    assert args.command == "get-dummy"
+    assert args.id == 5
+
+
+def test_main_routes_get_dummy_to_cmd_get_dummy(mocker):
+    mock_cmd = mocker.patch("src.cli.cmd_get_dummy")
+    main(["get-dummy", "--id", "1"])
+    mock_cmd.assert_called_once()
+
+
+def test_cmd_get_dummy_prints_table_for_found_image(mocker, capsys):
+    from src.db.models import DummyImage
+
+    fake_image = DummyImage(id=5, status="complete", latest_job_id="abc-123")
+    mocker.patch("src.services.job_service.get_dummy_job", return_value=fake_image)
+    mocker.patch("src.db.session.SessionLocal", return_value=MagicMock())
+
+    cmd_get_dummy(argparse.Namespace(command="get-dummy", id=5))
+
+    out = capsys.readouterr().out
+    assert "5" in out
+    assert "complete" in out
+
+
+def test_cmd_get_dummy_prints_error_for_missing_image(mocker, capsys):
+    mocker.patch("src.services.job_service.get_dummy_job", return_value=None)
+    mocker.patch("src.db.session.SessionLocal", return_value=MagicMock())
+
+    cmd_get_dummy(argparse.Namespace(command="get-dummy", id=999))
+
+    out = capsys.readouterr().out
+    assert "999" in out
+    assert "Error" in out
+
+
+def test_cmd_get_dummy_closes_session(mocker):
+    mocker.patch("src.services.job_service.get_dummy_job", return_value=None)
+    mock_session = MagicMock()
+    mocker.patch("src.db.session.SessionLocal", return_value=mock_session)
+
+    cmd_get_dummy(argparse.Namespace(command="get-dummy", id=1))
+
+    mock_session.close.assert_called_once()
 
 
 def test_parser_recognises_seed_db_command():

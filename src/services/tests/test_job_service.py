@@ -4,9 +4,29 @@ from structlog.contextvars import bind_contextvars
 
 from src.db.enums import JobStatus
 from src.db.models import DummyImage
-from src.services.job_service import dispatch_dummy_job
+from src.services.job_service import dispatch_dummy_job, get_dummy_job
 
 CONFIG = {"sleep_duration": 5}
+
+
+def test_get_dummy_job_returns_image_for_known_id():
+    fake_image = MagicMock(spec=DummyImage)
+    mock_db = MagicMock()
+    mock_db.get.return_value = fake_image
+
+    result = get_dummy_job(mock_db, 5)
+
+    mock_db.get.assert_called_once_with(DummyImage, 5)
+    assert result is fake_image
+
+
+def test_get_dummy_job_returns_none_for_unknown_id():
+    mock_db = MagicMock()
+    mock_db.get.return_value = None
+
+    result = get_dummy_job(mock_db, 999)
+
+    assert result is None
 
 
 def test_dispatch_dummy_job_creates_image_commits_and_returns_ids(mocker):
