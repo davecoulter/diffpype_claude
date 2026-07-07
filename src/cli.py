@@ -3,6 +3,7 @@ import sys
 
 
 def cmd_seed_db(_: argparse.Namespace) -> None:
+    """Insert the foundational StepDefinition records into the database."""
     from src.db.seed import seed_step_definitions
 
     print("Seeding database: inserting foundational StepDefinition records...")
@@ -10,7 +11,8 @@ def cmd_seed_db(_: argparse.Namespace) -> None:
     print("Done.")
 
 
-def cmd_reset_db(_: argparse.Namespace) -> None:
+def cmd_reset_db(args: argparse.Namespace) -> None:
+    """Drop all tables, rebuild the schema from migrations, and re-seed foundational rows."""
     from alembic import command
     from alembic.config import Config
 
@@ -22,10 +24,12 @@ def cmd_reset_db(_: argparse.Namespace) -> None:
     print("Rebuilding schema: upgrading to head...")
     command.upgrade(cfg, "head")
 
-    print("Done. Database schema reset.")
+    print("Schema reset complete. Auto-seeding foundational records...")
+    cmd_seed_db(args)
 
 
 def cmd_run_dummy(args: argparse.Namespace) -> None:
+    """Dispatch a dummy Celery job through the service layer and print its identifiers."""
     from src.db.session import SessionLocal
     from src.services import job_service
 
@@ -41,6 +45,7 @@ def cmd_run_dummy(args: argparse.Namespace) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Construct the argparse parser with all diffpype-manage subcommands."""
     parser = argparse.ArgumentParser(
         prog="diffpype-manage",
         description="DevOps CLI for Diffpype administrative tasks.",
@@ -70,6 +75,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> None:
+    """Parse CLI arguments and dispatch to the matching command handler."""
     parser = build_parser()
     args = parser.parse_args(argv)
 

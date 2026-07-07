@@ -28,6 +28,7 @@ Claude may only suggest packages or write code that aligns with this strict base
 *   **Stuck Database States:** When modifying asynchronous tasks, always verify that database rows cannot be left in an orphaned `IN_PROCESS` state if the worker crashes.
 *   **Transactions:** Any global or framework-level error handler that intercepts a crash to update a database status MUST explicitly call `db.rollback()` before attempting to write the failure state, preventing `PendingRollbackError` crashes.
 *   **Database Migrations:** If Claude modifies the SQLAlchemy models in `src/db/models.py`, it must automatically generate the Alembic migration script using `--autogenerate`. Afterward, it must explicitly pause and remind the user to run `alembic upgrade head` (or the equivalent Docker command) to apply the changes to the live database before proceeding.
+*   **Git Workflow:** The repository uses GitHub Flow. Direct pushes to `main` are forbidden. Claude must instruct the user to create a new feature branch (e.g., `feature/xyz`), commit changes there, and open a Pull Request against `main`.
 
 ### Directory References
 *   **Product Requirements:** Refer to `docs/prd.md` for overarching workflows.

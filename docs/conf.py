@@ -25,6 +25,7 @@ autodoc_mock_imports = [
     "fastapi",
     "psycopg2",
     "pydantic",
+    "pydantic_settings",
     "redis",
     "sqlalchemy",
     "starlette",

@@ -8,12 +8,17 @@ import logging
 
 import structlog
 
+from src.core.config import settings
 
-def configure_logging(level: int = logging.INFO) -> None:
+
+def configure_logging(level: int | None = None) -> None:
     """Configure structlog to emit JSON to stdout with contextvar merging.
 
     Idempotent: safe to call from every entry point (FastAPI app, Celery app).
+    The level defaults to ``settings.log_level`` (from the validated config).
     """
+    if level is None:
+        level = getattr(logging, settings.log_level.upper(), logging.INFO)
     structlog.configure(
         processors=[
             structlog.contextvars.merge_contextvars,

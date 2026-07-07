@@ -1,9 +1,13 @@
+"""SQLAlchemy ORM models for Diffpype domain entities and job provenance."""
 import sqlalchemy as sa
-from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from src.db.enums import CeleryQueue, JobStatus
 
+
 class Base(DeclarativeBase):
+    """Declarative base class for all Diffpype ORM models."""
+
     pass
 
 
@@ -27,6 +31,20 @@ class StepDefinition(Base):
     )
 
 
+class JobConfiguration(Base):
+    """Normalized job provenance: the exact kwargs and shell command for a run."""
+
+    __tablename__ = "job_configurations"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    job_kwargs: Mapped[dict | None] = mapped_column(sa.JSON, nullable=True)
+    execution_command: Mapped[str | None] = mapped_column(sa.String, nullable=True)
+
+    dummy_images: Mapped[list["DummyImage"]] = relationship(
+        back_populates="job_configuration"
+    )
+
+
 class DummyImage(Base):
     """Stage 0 domain entity used only to prove status tracking end-to-end."""
 
@@ -44,4 +62,10 @@ class DummyImage(Base):
         default=JobStatus.PENDING,
     )
     latest_job_id: Mapped[str | None] = mapped_column(sa.String, nullable=True)
-    job_kwargs: Mapped[dict | None] = mapped_column(sa.JSON, nullable=True)
+    job_configuration_id: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("job_configurations.id"), nullable=True
+    )
+
+    job_configuration: Mapped["JobConfiguration | None"] = relationship(
+        back_populates="dummy_images"
+    )

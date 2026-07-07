@@ -47,7 +47,7 @@ def test_dispatch_dummy_job_sets_in_process_status(mocker):
     assert added_image.status == JobStatus.IN_PROCESS
 
 
-def test_dispatch_dummy_job_stores_config_in_job_kwargs(mocker):
+def test_dispatch_dummy_job_stores_config_in_job_configuration(mocker):
     mock_db = MagicMock()
     mock_db.refresh.side_effect = lambda obj: setattr(obj, "id", 2)
     mocker.patch(
@@ -58,7 +58,23 @@ def test_dispatch_dummy_job_stores_config_in_job_kwargs(mocker):
     dispatch_dummy_job(mock_db, CONFIG)
 
     added_image = mock_db.add.call_args[0][0]
-    assert added_image.job_kwargs == CONFIG
+    assert added_image.job_configuration.job_kwargs == CONFIG
+
+
+def test_dispatch_dummy_job_records_execution_command(mocker):
+    mock_db = MagicMock()
+    mock_db.refresh.side_effect = lambda obj: setattr(obj, "id", 3)
+    mocker.patch(
+        "src.services.job_service.sleep_and_update_status.delay",
+        return_value=MagicMock(id="x"),
+    )
+
+    dispatch_dummy_job(mock_db, {"sleep_duration": 8})
+
+    added_image = mock_db.add.call_args[0][0]
+    assert added_image.job_configuration.execution_command == (
+        "diffpype-manage run-dummy --sleep 8"
+    )
 
 
 def test_dispatch_dummy_job_stores_task_id_on_image(mocker):
