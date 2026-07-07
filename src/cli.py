@@ -30,8 +30,15 @@ def cmd_reset_db(args: argparse.Namespace) -> None:
 
 def cmd_run_dummy(args: argparse.Namespace) -> None:
     """Dispatch a dummy Celery job through the service layer and print its identifiers."""
+    import uuid
+    from structlog.contextvars import bind_contextvars, clear_contextvars
+
     from src.db.session import SessionLocal
     from src.services import job_service
+
+    clear_contextvars()
+    correlation_id = str(uuid.uuid4())
+    bind_contextvars(correlation_id=correlation_id)
 
     config = {"sleep_duration": args.sleep}
 
@@ -41,7 +48,7 @@ def cmd_run_dummy(args: argparse.Namespace) -> None:
     finally:
         db.close()
 
-    print(f"Dispatched dummy job. job_id={job_id}, image_id={image_id}")
+    print(f"Dispatched dummy job. correlation_id={correlation_id}, job_id={job_id}, image_id={image_id}")
 
 
 def build_parser() -> argparse.ArgumentParser:

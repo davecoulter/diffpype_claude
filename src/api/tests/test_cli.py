@@ -122,6 +122,23 @@ def test_cmd_run_dummy_calls_dispatch_with_config_and_closes_session(mocker):
     mock_session.close.assert_called_once()
 
 
+def test_cmd_run_dummy_binds_a_valid_uuid_correlation_id(mocker):
+    import uuid
+    from structlog.contextvars import get_contextvars
+
+    mocker.patch(
+        "src.services.job_service.dispatch_dummy_job",
+        return_value=("fake-job-id", 42),
+    )
+    mocker.patch("src.db.session.SessionLocal", return_value=MagicMock())
+
+    cmd_run_dummy(argparse.Namespace(command="run-dummy", sleep=5))
+
+    ctx = get_contextvars()
+    assert "correlation_id" in ctx
+    uuid.UUID(ctx["correlation_id"])  # raises ValueError if not a valid UUID
+
+
 def test_cmd_run_dummy_logs_job_id_to_stdout(mocker, capsys):
     mocker.patch(
         "src.services.job_service.dispatch_dummy_job",
