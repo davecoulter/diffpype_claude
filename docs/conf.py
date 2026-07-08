@@ -30,10 +30,12 @@ suppress_warnings = ["myst.header"]
 autodoc_mock_imports = [
     "celery",
     "fastapi",
+    "itsdangerous",
     "psycopg2",
     "pydantic",
     "pydantic_settings",
     "redis",
+    "sqladmin",
     "sqlalchemy",
     "starlette",
     "structlog",
