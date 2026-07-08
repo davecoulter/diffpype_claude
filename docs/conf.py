@@ -37,6 +37,7 @@ autodoc_mock_imports = [
     "redis",
     "sqladmin",
     "sqlalchemy",
+    "src.api.admin",
     "starlette",
     "structlog",
     "uvicorn",
