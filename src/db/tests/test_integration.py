@@ -7,9 +7,10 @@ These tests validate that:
   - The JobConfiguration table and its relationship to DummyImage round-trip correctly.
 """
 from sqlalchemy import text
+from sqlalchemy.orm import sessionmaker
 
 from src.db.enums import CeleryQueue, JobStatus
-from src.db.models import DummyImage, JobConfiguration, StepDefinition
+from src.db.models import DummyImage, JobConfiguration, StepDefinition, User
 
 
 def test_job_status_enum_type_exists_in_db(db):
@@ -42,11 +43,12 @@ def test_dummy_image_status_roundtrip(db):
     assert updated.status == JobStatus.COMPLETE
 
 
-def test_step_definition_queue_roundtrip(db):
+def test_step_definition_queue_roundtrip(db, user):
     step = StepDefinition(
         name="integration_test_step",
         task_name="src.worker.tasks.sleep_and_update_status",
         queue=CeleryQueue.LIGHT,
+        user_id=user.id,
     )
     db.add(step)
     db.flush()
@@ -65,10 +67,11 @@ def test_all_job_status_transitions(db):
         assert db.get(DummyImage, image.id).status == status
 
 
-def test_job_configuration_roundtrip(db):
+def test_job_configuration_roundtrip(db, user):
     config = JobConfiguration(
         job_kwargs={"sleep_duration": 7},
         execution_command="diffpype-manage run-dummy --sleep 7",
+        user_id=user.id,
     )
     db.add(config)
     db.flush()
@@ -78,10 +81,11 @@ def test_job_configuration_roundtrip(db):
     assert fetched.execution_command == "diffpype-manage run-dummy --sleep 7"
 
 
-def test_dummy_image_job_configuration_relationship(db):
+def test_dummy_image_job_configuration_relationship(db, user):
     config = JobConfiguration(
         job_kwargs={"sleep_duration": 3},
         execution_command="diffpype-manage run-dummy --sleep 3",
+        user_id=user.id,
     )
     image = DummyImage(status=JobStatus.IN_PROCESS, job_configuration=config)
     db.add(image)
@@ -119,11 +123,12 @@ def test_dummy_image_timestamps_populated(db):
     assert image.job_finished_at is None
 
 
-def test_job_configuration_timestamps_populated(db):
+def test_job_configuration_timestamps_populated(db, user):
     """The TimestampMixin server defaults populate created_at/updated_at on insert."""
     config = JobConfiguration(
         job_kwargs={"sleep_duration": 5},
         execution_command="diffpype-manage run-dummy --sleep 5",
+        user_id=user.id,
     )
     db.add(config)
     db.flush()
@@ -131,3 +136,66 @@ def test_job_configuration_timestamps_populated(db):
 
     assert config.created_at is not None
     assert config.updated_at is not None
+
+
+def test_user_roundtrip(db):
+    """User model persists and round-trips all fields correctly."""
+    u = User(username="testuser", email="test@example.com", is_active=True)
+    db.add(u)
+    db.flush()
+    db.refresh(u)
+
+    fetched = db.get(User, u.id)
+    assert fetched.username == "testuser"
+    assert fetched.email == "test@example.com"
+    assert fetched.is_active is True
+    assert fetched.created_at is not None
+    assert fetched.updated_at is not None
+
+
+def test_step_definition_user_relationship(db, user):
+    """StepDefinition.user back-populates correctly when user_id is set."""
+    step = StepDefinition(
+        name="provenance_test_step",
+        task_name="src.worker.tasks.sleep_and_update_status",
+        queue=CeleryQueue.LIGHT,
+        user_id=user.id,
+    )
+    db.add(step)
+    db.flush()
+
+    fetched = db.get(StepDefinition, step.id)
+    assert fetched.user_id == user.id
+    assert fetched.user.username == user.username
+
+
+def test_sysadmin_seeding_links_step_definition_to_user(mocker, test_engine):
+    """seed_step_definitions upserts a sysadmin User and assigns them to the StepDefinition."""
+    from src.db.seed import seed_step_definitions
+
+    TestSession = sessionmaker(bind=test_engine)
+    mocker.patch("src.db.seed.SessionLocal", side_effect=TestSession)
+
+    seed_step_definitions()
+
+    db = TestSession()
+    try:
+        sysadmin = db.query(User).filter_by(username="sysadmin").one_or_none()
+        assert sysadmin is not None
+        assert sysadmin.email == "admin@diffpype.local"
+        assert sysadmin.is_active is True
+        step = db.query(StepDefinition).filter_by(name="dummy_sleep").one_or_none()
+        assert step is not None
+        assert step.user_id == sysadmin.id
+    finally:
+        db.close()
+
+    # Committed outside the transactional fixture — must clean up explicitly so the
+    # unique constraint on username doesn't bleed into subsequent tests.
+    cleanup = TestSession()
+    try:
+        cleanup.query(StepDefinition).filter_by(name="dummy_sleep").delete()
+        cleanup.query(User).filter_by(username="sysadmin").delete()
+        cleanup.commit()
+    finally:
+        cleanup.close()

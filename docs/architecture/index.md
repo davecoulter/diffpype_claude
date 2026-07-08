@@ -25,4 +25,5 @@ work for that stage.
 16_generalized_cli_execution
 17_cli_status_and_mirroring
 18_observability_and_docs
+19_user_auth_and_admin
 ```

@@ -1,3 +1,5 @@
+name: diffpype
+
 services:
   db:
     build:

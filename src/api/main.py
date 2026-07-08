@@ -5,13 +5,30 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
+from sqladmin import Admin
+
+from src.api.admin import (
+    DummyImageAdmin,
+    JobConfigurationAdmin,
+    ProjectAdmin,
+    StepDefinitionAdmin,
+    UserAdmin,
+)
 from src.api.routes.jobs import router as jobs_router
 from src.api.routes.meta import router as meta_router
 from src.core.logger import configure_logging, get_logger
+from src.db.session import engine
 
 configure_logging()
 
 app = FastAPI(title="Diffpype API")
+
+admin = Admin(app, engine)
+admin.add_view(UserAdmin)
+admin.add_view(ProjectAdmin)
+admin.add_view(StepDefinitionAdmin)
+admin.add_view(DummyImageAdmin)
+admin.add_view(JobConfigurationAdmin)
 
 app.add_middleware(
     CORSMiddleware,

@@ -3,7 +3,7 @@ from unittest.mock import MagicMock
 from structlog.contextvars import bind_contextvars
 
 from src.db.enums import JobStatus
-from src.db.models import DummyImage
+from src.db.models import DummyImage, User
 from src.services.job_service import dispatch_dummy_job, get_dummy_job
 
 CONFIG = {"sleep_duration": 5}
@@ -122,6 +122,23 @@ def test_dispatch_dummy_job_passes_sleep_duration_to_task(mocker):
     dispatch_dummy_job(mock_db, {"sleep_duration": 3})
 
     mock_delay.assert_called_once_with(7, 3, correlation_id=None)
+
+
+def test_dispatch_dummy_job_assigns_sysadmin_as_owner(mocker):
+    mock_db = MagicMock()
+    fake_sysadmin = MagicMock(spec=User, id=1)
+    mock_db.query.return_value.filter_by.return_value.one.return_value = fake_sysadmin
+    mock_db.refresh.side_effect = lambda obj: setattr(obj, "id", 10)
+    mocker.patch(
+        "src.services.job_service.sleep_and_update_status.delay",
+        return_value=MagicMock(id="x"),
+    )
+
+    dispatch_dummy_job(mock_db, CONFIG)
+
+    mock_db.query.assert_called_with(User)
+    added_image = mock_db.add.call_args[0][0]
+    assert added_image.job_configuration.user_id == 1
 
 
 def test_dispatch_dummy_job_forwards_bound_correlation_id(mocker):

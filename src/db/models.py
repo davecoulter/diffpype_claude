@@ -27,7 +27,37 @@ class TimestampMixin:
     )
 
 
-class StepDefinition(Base):
+class User(TimestampMixin, Base):
+    """Authenticated principal who owns Projects, StepDefinitions, and JobConfigurations."""
+
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    username: Mapped[str] = mapped_column(sa.String, unique=True, nullable=False)
+    email: Mapped[str] = mapped_column(sa.String, unique=True, nullable=False)
+    is_active: Mapped[bool] = mapped_column(
+        sa.Boolean, nullable=False, server_default=sa.text("true")
+    )
+
+    projects: Mapped[list["Project"]] = relationship(back_populates="user")
+    step_definitions: Mapped[list["StepDefinition"]] = relationship(back_populates="user")
+    job_configurations: Mapped[list["JobConfiguration"]] = relationship(back_populates="user")
+
+
+class Project(TimestampMixin, Base):
+    """Logical grouping of related pipeline runs under a single User."""
+
+    __tablename__ = "projects"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(sa.String, nullable=False)
+    description: Mapped[str | None] = mapped_column(sa.String, nullable=True)
+    user_id: Mapped[int] = mapped_column(sa.ForeignKey("users.id"), nullable=False)
+
+    user: Mapped["User"] = relationship(back_populates="projects")
+
+
+class StepDefinition(TimestampMixin, Base):
     """Maps a pipeline action to its Celery task name and execution queue."""
 
     __tablename__ = "step_definitions"
@@ -45,6 +75,9 @@ class StepDefinition(Base):
         nullable=False,
         default=CeleryQueue.LIGHT,
     )
+    user_id: Mapped[int] = mapped_column(sa.ForeignKey("users.id"), nullable=False)
+
+    user: Mapped["User"] = relationship(back_populates="step_definitions")
 
 
 class JobConfiguration(TimestampMixin, Base):
@@ -55,7 +88,9 @@ class JobConfiguration(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     job_kwargs: Mapped[dict | None] = mapped_column(sa.JSON, nullable=True)
     execution_command: Mapped[str | None] = mapped_column(sa.String, nullable=True)
+    user_id: Mapped[int] = mapped_column(sa.ForeignKey("users.id"), nullable=False)
 
+    user: Mapped["User"] = relationship(back_populates="job_configurations")
     dummy_images: Mapped[list["DummyImage"]] = relationship(
         back_populates="job_configuration"
     )
