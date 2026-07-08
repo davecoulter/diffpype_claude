@@ -7,6 +7,10 @@ sys.path.insert(0, os.path.abspath(".."))
 # crash during the Sphinx autodoc import phase. No real connections are made.
 os.environ.setdefault("DATABASE_URL", "postgresql+psycopg2://sphinx:sphinx@localhost/sphinx")
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
+os.environ.setdefault("ADMIN_USER", "sysadmin")
+os.environ.setdefault("ADMIN_PASSWORD", "sphinx-placeholder")
+os.environ.setdefault("ADMIN_SECRET_KEY", "sphinx-placeholder-secret")
+os.environ.setdefault("CORS_ORIGINS", "http://localhost:5173")
 
 project = "Diffpype"
 copyright = "2026, STScI"
@@ -28,6 +32,7 @@ suppress_warnings = ["myst.header"]
 
 # Mock heavy external deps so RTD does not need the full scientific Python stack.
 autodoc_mock_imports = [
+    "bcrypt",
     "celery",
     "fastapi",
     "itsdangerous",

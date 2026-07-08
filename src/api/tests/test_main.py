@@ -42,7 +42,22 @@ def test_get_logger_returns_usable_logger():
     log.info("smoke_test", key="value")
 
 
-def test_admin_index_returns_200():
-    client = TestClient(app)
+def test_admin_unauthenticated_redirects_to_login():
+    client = TestClient(app, follow_redirects=False)
     response = client.get("/admin/")
-    assert response.status_code == 200
+    assert response.status_code == 302
+    assert "/admin/login" in response.headers["location"]
+
+
+def test_cors_rejects_disallowed_origin(mocker):
+    mocker.patch(
+        "src.services.job_service.dispatch_dummy_job",
+        return_value=("job-1", 1),
+    )
+    client = TestClient(app)
+    response = client.post(
+        "/jobs/dummy",
+        json=VALID_PAYLOAD,
+        headers={"Origin": "http://evil.example.com"},
+    )
+    assert "access-control-allow-origin" not in response.headers

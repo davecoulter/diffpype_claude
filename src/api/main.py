@@ -8,6 +8,7 @@ from structlog.contextvars import bind_contextvars, clear_contextvars
 from sqladmin import Admin
 
 from src.api.admin import (
+    DiffpypeAuthBackend,
     DummyImageAdmin,
     JobConfigurationAdmin,
     ProjectAdmin,
@@ -16,6 +17,7 @@ from src.api.admin import (
 )
 from src.api.routes.jobs import router as jobs_router
 from src.api.routes.meta import router as meta_router
+from src.core.config import settings
 from src.core.logger import configure_logging, get_logger
 from src.db.session import engine
 
@@ -23,7 +25,8 @@ configure_logging()
 
 app = FastAPI(title="Diffpype API")
 
-admin = Admin(app, engine)
+_auth_backend = DiffpypeAuthBackend(secret_key=settings.admin_secret_key)
+admin = Admin(app, engine, authentication_backend=_auth_backend)
 admin.add_view(UserAdmin)
 admin.add_view(ProjectAdmin)
 admin.add_view(StepDefinitionAdmin)
@@ -32,7 +35,7 @@ admin.add_view(JobConfigurationAdmin)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
     allow_methods=["*"],
     allow_headers=["*"],
 )

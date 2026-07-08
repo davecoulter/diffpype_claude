@@ -3,3 +3,4 @@ sphinx-rtd-theme==3.0.2
 myst-parser==4.0.0
 sqladmin==0.18.0
 itsdangerous==2.2.0
+bcrypt==4.2.0

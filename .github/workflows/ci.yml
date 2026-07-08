@@ -36,6 +36,9 @@ jobs:
       DATABASE_URL: postgresql+psycopg2://diffpype_ci:diffpype_ci@localhost:5432/diffpype_ci
       TEST_DATABASE_URL: postgresql+psycopg2://diffpype_ci:diffpype_ci@localhost:5432/diffpype_ci
       REDIS_URL: redis://localhost:6379/0
+      ADMIN_USER: sysadmin
+      ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
+      ADMIN_SECRET_KEY: ${{ secrets.ADMIN_SECRET_KEY }}
 
     steps:
       - uses: actions/checkout@v4

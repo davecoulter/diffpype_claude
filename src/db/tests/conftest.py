@@ -28,7 +28,7 @@ def user(db):
     """Create a test owner User in the current test transaction."""
     from src.db.models import User
 
-    u = User(username="testowner", email="testowner@diffpype.local", is_active=True)
+    u = User(username="testowner", email="testowner@diffpype.local", is_active=True, hashed_password="dummy_hash_for_testing")
     db.add(u)
     db.flush()
     return u

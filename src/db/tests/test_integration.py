@@ -140,7 +140,7 @@ def test_job_configuration_timestamps_populated(db, user):
 
 def test_user_roundtrip(db):
     """User model persists and round-trips all fields correctly."""
-    u = User(username="testuser", email="test@example.com", is_active=True)
+    u = User(username="testuser", email="test@example.com", is_active=True, hashed_password="dummy_hash_for_testing")
     db.add(u)
     db.flush()
     db.refresh(u)
@@ -149,8 +149,25 @@ def test_user_roundtrip(db):
     assert fetched.username == "testuser"
     assert fetched.email == "test@example.com"
     assert fetched.is_active is True
+    assert fetched.hashed_password == "dummy_hash_for_testing"
     assert fetched.created_at is not None
     assert fetched.updated_at is not None
+
+
+def test_hashed_password_roundtrip(db):
+    """hashed_password field persists to and reads back from the database correctly."""
+    import bcrypt
+    hashed = bcrypt.hashpw(b"testpassword", bcrypt.gensalt()).decode("utf-8")
+
+    u = User(username="pwdtestuser", email="pwdtest@example.com", is_active=True, hashed_password=hashed)
+    db.add(u)
+    db.flush()
+    db.refresh(u)
+
+    fetched = db.get(User, u.id)
+    assert fetched.hashed_password == hashed
+    assert bcrypt.checkpw(b"testpassword", fetched.hashed_password.encode("utf-8"))
+    assert not bcrypt.checkpw(b"wrongpassword", fetched.hashed_password.encode("utf-8"))
 
 
 def test_step_definition_user_relationship(db, user):
@@ -184,6 +201,7 @@ def test_sysadmin_seeding_links_step_definition_to_user(mocker, test_engine):
         assert sysadmin is not None
         assert sysadmin.email == "admin@diffpype.local"
         assert sysadmin.is_active is True
+        assert sysadmin.hashed_password is not None and len(sysadmin.hashed_password) > 0
         step = db.query(StepDefinition).filter_by(name="dummy_sleep").one_or_none()
         assert step is not None
         assert step.user_id == sysadmin.id

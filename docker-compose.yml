@@ -42,6 +42,10 @@ services:
       REDIS_URL: redis://redis:6379/0
       TEST_DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/diffpype_test
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      ADMIN_USER: ${ADMIN_USER:-sysadmin}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
+      ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:-diffpype-dev-secret-key-change-in-production}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
@@ -109,6 +113,7 @@ services:
     environment:
       CELERY_BROKER_URL: redis://redis:6379/0
       FLOWER_PORT: ${FLOWER_PORT:-5555}
+      FLOWER_BASIC_AUTH: ${FLOWER_BASIC_AUTH:-admin:changeme}
     ports:
       - "${FLOWER_PORT:-5555}:5555"
     depends_on:

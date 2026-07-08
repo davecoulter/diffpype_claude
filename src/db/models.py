@@ -35,6 +35,7 @@ class User(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     username: Mapped[str] = mapped_column(sa.String, unique=True, nullable=False)
     email: Mapped[str] = mapped_column(sa.String, unique=True, nullable=False)
+    hashed_password: Mapped[str] = mapped_column(sa.String, nullable=False)
     is_active: Mapped[bool] = mapped_column(
         sa.Boolean, nullable=False, server_default=sa.text("true")
     )
