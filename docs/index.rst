@@ -54,6 +54,10 @@ API (FastAPI)
    :members:
    :undoc-members:
 
+.. automodule:: src.api.admin
+   :members:
+   :undoc-members:
+
 Worker (Celery)
 ---------------
 

@@ -4,7 +4,7 @@ from structlog.contextvars import get_contextvars
 
 from src.core.logger import get_logger
 from src.db.enums import JobStatus
-from src.db.models import DummyImage, JobConfiguration
+from src.db.models import DummyImage, JobConfiguration, User
 from src.worker.tasks import sleep_and_update_status
 
 
@@ -23,9 +23,11 @@ def dispatch_dummy_job(db: Session, config: dict) -> tuple[str, int]:
     log = get_logger()
     correlation_id = get_contextvars().get("correlation_id")
 
+    sysadmin = db.query(User).filter_by(username="sysadmin").one()
     job_configuration = JobConfiguration(
         job_kwargs=config,
         execution_command=f"diffpype-manage run-dummy --sleep {config['sleep_duration']}",
+        user_id=sysadmin.id,
     )
     image = DummyImage(status=JobStatus.IN_PROCESS, job_configuration=job_configuration)
     db.add(image)

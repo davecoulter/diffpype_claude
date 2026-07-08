@@ -40,3 +40,9 @@ def test_get_logger_returns_usable_logger():
     log = get_logger("test")
     # bind returns a logger; calling a level method must not raise.
     log.info("smoke_test", key="value")
+
+
+def test_admin_index_returns_200():
+    client = TestClient(app)
+    response = client.get("/admin/")
+    assert response.status_code == 200

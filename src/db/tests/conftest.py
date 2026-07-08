@@ -24,6 +24,17 @@ def test_engine():
 
 
 @pytest.fixture
+def user(db):
+    """Create a test owner User in the current test transaction."""
+    from src.db.models import User
+
+    u = User(username="testowner", email="testowner@diffpype.local", is_active=True)
+    db.add(u)
+    db.flush()
+    return u
+
+
+@pytest.fixture
 def db(test_engine):
     """Transactional session — rolls back after each test for full isolation."""
     connection = test_engine.connect()

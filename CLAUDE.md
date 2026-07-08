@@ -31,6 +31,8 @@ Claude may only suggest packages or write code that aligns with this strict base
 *   **Transactions:** Any global or framework-level error handler that intercepts a crash to update a database status MUST explicitly call `db.rollback()` before attempting to write the failure state, preventing `PendingRollbackError` crashes.
 *   **Database Migrations:** If Claude modifies the SQLAlchemy models in `src/db/models.py`, it must automatically generate the Alembic migration script using `--autogenerate`. Afterward, it must explicitly pause and remind the user to run `alembic upgrade head` (or the equivalent Docker command) to apply the changes to the live database before proceeding.
 *   **Git Workflow:** The repository uses GitHub Flow. Direct pushes to `main` are forbidden. Claude must instruct the user to create a new feature branch (e.g., `feature/xyz`), commit changes there, and open a Pull Request against `main`.
+*   **Integration Test Isolation:** Any test that calls a function which opens its own `SessionLocal()` and commits (e.g. `seed_step_definitions`) bypasses the transactional rollback fixture in `conftest.py`. Committed rows persist across the entire test session. Two rules: (1) test fixtures that create shared data must use usernames/names that don't conflict with seeded data (e.g. `"testowner"`, not `"sysadmin"`); (2) any test that triggers an out-of-fixture commit must explicitly delete the committed rows at the end of the test using its own session + commit.
+
 
 ### Directory References
 *   **Product Requirements:** Refer to `docs/prd.md` for overarching workflows.
