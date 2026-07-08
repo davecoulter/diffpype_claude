@@ -5,8 +5,9 @@ __pycache__/
 node_modules/
 .env
 
-# Claude internal tracking
-.claude/
+# Claude internal tracking (skills and context are tracked; local settings are not)
+.claude/settings.local.json
+.claude/.DS_Store
 
 # Sphinx build output
 docs/_build/
