@@ -21,6 +21,7 @@ Claude may only suggest packages or write code that aligns with this strict base
 *   **Environment Variable Synchronization:** Whenever an environment variable is added, modified, or removed, the change must be perfectly synchronized across both `.env.example` and the local `.env` file. These two files must always be identical in their set of keys.
 *   **Model Evaluation Phase:** Before executing the instructions in any architectural markdown file, Claude must first analyze the complexity of the request and output a model recommendation with rationale. Claude must then **STOP COMPLETELY** — no file reads, no code, no tool calls — and wait for explicit human authorization (e.g. "proceed", "engage") before taking any further action. This pause is non-negotiable even when the model choice is obvious. Once the task is completed, Claude must remind the user to revert to the standard model.
 *   **Command Authorization Rule:** Claude is explicitly authorized to autonomously execute standard, non-destructive development commands (e.g., `uv sync --all-groups`, `uv lock`, `pytest`, `docker compose build`, `docker compose up`, `docker compose down`) without pausing for human authorization. **Note:** Destructive commands that wipe data volumes (e.g., `docker compose down -v`) strictly require human authorization. 
+*   **Meta-Configuration Change Confirmation:** Before editing this file (`CLAUDE.md`), any file in `.claude/skills/`, `.claude/context/gemini_rules.md`, or `.claude/settings.local.json`, Claude must first propose the change in chat and wait for explicit user confirmation. These files govern how Claude and Gemini behave across every future session, so changes to them are never made silently as a side effect of other work — even when the change seems obviously correct. This does not apply when the user has directly dictated the exact change in the current message (no need to ask them to re-confirm their own instruction).
 *   **API/CLI Parity:** Any feature, query, or mutation exposed via the FastAPI router must have a corresponding, fully functional command in the `diffpype-manage` CLI. Both boundaries must delegate to the exact same function in the Shared Service Layer.
 *   **Command Aliases:** If the user types `runPrompt on [filename.md]`, immediately read `.claude/skills/run_arch.md` and execute the instructions defined there.
 
@@ -29,6 +30,7 @@ Claude may only suggest packages or write code that aligns with this strict base
     *   `runPrompt on [filename.md]` → `run_arch.md`: Full implementation execution with model evaluation pause, branch reminder, and post-implementation verification checklist.
     *   `genTests on [filename.md]` → `gen_tests.md`: Interactive CLI + Application QA session. Runs one step at a time, waits for user confirmation, diagnoses failures. Only exits when all steps pass. Must be completed before `genPR`.
     *   `genPR on [filename.md]` → `gen_pr.md`: Generates commit message, PR title, and PR body from git context + the architectural doc. Assumes `genTests` has been completed — generates with pre-checked boxes and verified outcomes.
+    *   `stratSesh on [filename.md]` → `strat_sesh.md`: Structured briefing on structural changes, data flow changes, and code review highlights for a completed doc. Interactive drill-down — user chooses what to explore further.
 
 
 ##### Operational Gotchas & Checklists
@@ -50,13 +52,11 @@ Claude may only suggest packages or write code that aligns with this strict base
 ### Directory References
 *   **Product Requirements:** Refer to `docs/prd.md` for overarching workflows.
 *   **Architecture & Design:** Refer to numbered files in `docs/architecture/` (e.g., `01_...`) for stage-by-stage design and prompting.
+*   **Technical Debt:** Refer to `docs/tech_debt.md` for tracked workarounds, dependency pins, and known limitations to revisit later.
 *   **Claude Skills:** Refer to `.claude/skills/` (or `.claude/rules/`) for repeatable execution scripts.
 
 ### Clarifications & Logs
 *(Claude will append a running log of global architecture decisions and ask clarifying questions here.)*
-
-###### 2026-07-08
-*   **Deferred:** React Router `v7_startTransition` future flag warning surfaced during doc 20 manual testing. This is a one-liner opt-in (`future: { v7_startTransition: true }` in router config) and belongs in doc 24 (Developer Experience) alongside other frontend dependency management tasks. Nothing is broken; the UI is fully functional.
 
 ###### 2026-07-02
 *   **Action:** Added Model Evaluation Phase and Command Authorization Rule to Guardrails for Agentic Coding to optimize model usage and whitelist non-destructive commands.

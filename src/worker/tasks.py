@@ -2,7 +2,6 @@ import subprocess
 import time
 
 from sqlalchemy import func
-from structlog.contextvars import bind_contextvars
 
 from src.core.logger import get_logger
 from src.db.enums import JobStatus
@@ -14,10 +13,7 @@ from src.worker.utils import build_cli_command
 
 
 @celery_app.task(base=DiffpypeTask, name="src.worker.tasks.sleep_and_update_status")
-def sleep_and_update_status(
-    image_id: int, sleep_duration: int = 5, correlation_id: str | None = None
-) -> None:
-    bind_contextvars(correlation_id=correlation_id)
+def sleep_and_update_status(image_id: int, sleep_duration: int = 5) -> None:
     log = get_logger()
     log.info("task_started", image_id=image_id, sleep_duration=sleep_duration)
 
@@ -63,11 +59,8 @@ def db_backup_cron() -> None:
 
 
 @celery_app.task(base=DiffpypeTask, name="src.worker.tasks.execute_cli_tool")
-def execute_cli_tool(
-    job_config_id: int, executable: str, correlation_id: str | None = None
-) -> None:
+def execute_cli_tool(job_config_id: int, executable: str) -> None:
     """Execute an external CLI tool using the kwargs stored in JobConfiguration."""
-    bind_contextvars(correlation_id=correlation_id)
     log = get_logger()
     log.info("execute_cli_tool_started", job_config_id=job_config_id, executable=executable)
 

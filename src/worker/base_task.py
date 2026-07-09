@@ -9,7 +9,6 @@ observe a terminal state instead of an orphaned ``in_process`` record.
 import celery
 from sqlalchemy import func
 from sqlalchemy.exc import OperationalError as SAOperationalError
-from structlog.contextvars import bind_contextvars
 
 from src.core.config import settings
 from src.core.logger import get_logger
@@ -28,11 +27,9 @@ class DiffpypeTask(celery.Task):
     default_retry_delay = settings.celery_task_retry_delay
 
     def on_failure(self, exc, task_id, args, kwargs, einfo) -> None:
+        # The active OTel task span supplies the correlation_id to every log line
+        # via the structlog processor, so no manual context binding is needed here.
         image_id = args[0] if args else None
-        correlation_id = kwargs.get("correlation_id")
-        if correlation_id:
-            bind_contextvars(correlation_id=correlation_id)
-
         log = get_logger()
         log.error(
             "task_failed",

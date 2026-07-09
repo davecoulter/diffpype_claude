@@ -1,9 +1,8 @@
-import uuid
-
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from structlog.contextvars import bind_contextvars, clear_contextvars
+from opentelemetry import trace
+from starlette_exporter import PrometheusMiddleware, handle_metrics
 
 from sqladmin import Admin
 
@@ -19,6 +18,7 @@ from src.api.routes.jobs import router as jobs_router
 from src.api.routes.meta import router as meta_router
 from src.core.config import settings
 from src.core.logger import configure_logging, get_logger
+from src.core.tracing import setup_tracing
 from src.db.session import engine
 
 configure_logging()
@@ -33,6 +33,23 @@ admin.add_view(StepDefinitionAdmin)
 admin.add_view(DummyImageAdmin)
 admin.add_view(JobConfigurationAdmin)
 
+
+def sqladmin_exception_handler(request: Request, exc: Exception) -> None:
+    """Log exceptions raised inside the mounted sqladmin sub-app, then re-raise.
+
+    sqladmin is a separate ASGI sub-application, so exceptions in its routes never
+    reach FastAPI's ``unhandled_exception_handler`` and are invisible to both OTel
+    error recording and structlog. Registering this on the sub-app closes that gap.
+    """
+    get_logger().error("sqladmin_unhandled_exception", exc_info=exc)
+    raise exc
+
+
+admin.admin.add_exception_handler(Exception, sqladmin_exception_handler)
+
+app.add_middleware(PrometheusMiddleware, app_name="diffpype")
+app.add_route("/metrics", handle_metrics)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[o.strip() for o in settings.cors_origins.split(",")],
@@ -43,12 +60,12 @@ app.add_middleware(
 
 @app.middleware("http")
 async def correlation_id_middleware(request: Request, call_next):
-    """Bind a fresh correlation_id to the structlog context for each request."""
-    clear_contextvars()
-    correlation_id = str(uuid.uuid4())
-    bind_contextvars(correlation_id=correlation_id)
+    """Expose the active OTel trace ID as the X-Correlation-ID response header."""
+    span_context = trace.get_current_span().get_span_context()
+    correlation_id = format(span_context.trace_id, "032x") if span_context.is_valid else None
     response = await call_next(request)
-    response.headers["X-Correlation-ID"] = correlation_id
+    if correlation_id is not None:
+        response.headers["X-Correlation-ID"] = correlation_id
     return response
 
 
@@ -61,3 +78,7 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 
 app.include_router(jobs_router, prefix="/api/v1")
 app.include_router(meta_router, prefix="/api/v1")
+
+# Instrument the app, the SQLAlchemy engine, and Celery. Called last so the router
+# and middleware stack are fully assembled before OTel wraps the ASGI app.
+setup_tracing(app=app, engine=engine)

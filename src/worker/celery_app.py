@@ -3,11 +3,17 @@ from celery.schedules import crontab
 
 from src.core.config import settings
 from src.core.logger import configure_logging
+from src.core.tracing import setup_tracing
 from src.db.enums import CeleryQueue
+from src.db.session import engine
 
 # Configure JSON logging for the worker process (and any CLI path that imports
 # the service/task layer) so all components stream structured logs to stdout.
 configure_logging()
+
+# Instrument Celery and the SQLAlchemy engine so worker task spans are exported and
+# the trace context dispatched by the API propagates across the process boundary.
+setup_tracing(engine=engine)
 
 celery_app = Celery(
     "diffpype",

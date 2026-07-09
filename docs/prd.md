@@ -58,7 +58,15 @@ To ensure fast, iterative development of the core infrastructure, the following 
 *   Extracting photometry from difference images.
 *   Clustering detected sources into unique objects and composing light curves.
 
+**Observability & Monitoring Infrastructure:**
+*   Standing up an actual Prometheus server to scrape the `/metrics` endpoint (added in architecture doc 23) and retain it as a time series, plus a Grafana dashboard for visualization/alerting. Currently the endpoint exposes request metrics but nothing collects or graphs them over time.
+*   Wiring Jaeger's SPM ("Monitor" tab) to a spanmetrics-connector-backed Prometheus instance, so per-service/per-operation request-rate/error-rate/duration graphs are available directly in the Jaeger UI. Surfaced when the Monitor tab returned a 501 ("metrics querying is currently disabled") during doc 23 QA — expected, since no SPM backend is configured; tracing itself is unaffected.
+
 ### Logs
+#### 2026-07-09
+*   **Action:** Added an "Observability & Monitoring Infrastructure" subsection to Deferred / Future Scope, capturing follow-on work surfaced during doc 23 (Observability) QA: a real Prometheus server + Grafana dashboard, and Jaeger SPM wiring.
+*   **Action:** Moved the CLI root-span tracing item out of this section to `docs/tech_debt.md` — it's a known gap in already-shipped code, not an unbuilt product feature, so it fits that document's scope better.
+
 #### 2026-06-30
 *   **Action:** Drafted v0.1 of PRD based on the user's workflow definition.
 *   **Action:** Updated to v0.2. Added Job Orchestration, Monitoring & Re-Execution section.

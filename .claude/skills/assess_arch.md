@@ -6,7 +6,7 @@
 **Action:**
 Read `docs/architecture/[filename.md]`. Do NOT write any implementation code. Run the full checklist below on every invocation — never skip items that passed in a prior pass, as doc edits can introduce new issues indirectly.
 
-For each failing item, produce: (a) a plain-language description of what is missing, and (b) a specific revision prompt the user can paste into Gemini. Revision prompts must be deterministic — specify exactly what text to write, where to place it, and what to replace. Do not give Gemini options or vague guidance that requires interpretation. If a choice must be made, make it yourself (or flag it as **Decision Required** for the user) before formulating the prompt. Imprecise prompts produce imprecise docs and extra revision cycles.
+For each failing item, produce: (a) a plain-language description of what is missing, and (b) a revision prompt the user can paste into Gemini. Revision prompts must convey the *what* and *why* of the required change clearly enough that Gemini can implement it without ambiguity — but must not ghostwrite the solution. State the problem, the location, and the recommended direction; leave the prose to Gemini. Do not dictate exact sentences or replacement text. If a choice must be made, flag it as **Decision Required** for the user before formulating the prompt.
 
 ---
 
