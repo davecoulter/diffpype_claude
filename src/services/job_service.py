@@ -1,6 +1,5 @@
 """Business logic for dispatching dummy jobs, shared by the API and CLI boundaries."""
 from sqlalchemy.orm import Session
-from structlog.contextvars import get_contextvars
 
 from src.core.logger import get_logger
 from src.db.enums import JobStatus
@@ -16,12 +15,10 @@ def get_dummy_job(db: Session, image_id: int) -> DummyImage | None:
 def dispatch_dummy_job(db: Session, config: dict) -> tuple[str, int]:
     """Persist a JobConfiguration + DummyImage, dispatch the sleep task, return (job_id, image_id).
 
-    The active ``correlation_id`` (bound by the FastAPI middleware, if any) is
-    forwarded into the Celery task so the worker can re-bind the same ID and the
-    request can be traced across the process boundary.
+    OpenTelemetry's Celery instrumentation propagates the active trace context into
+    the dispatched task automatically, so no correlation ID is threaded by hand.
     """
     log = get_logger()
-    correlation_id = get_contextvars().get("correlation_id")
 
     sysadmin = db.query(User).filter_by(username="sysadmin").one()
     job_configuration = JobConfiguration(
@@ -34,9 +31,7 @@ def dispatch_dummy_job(db: Session, config: dict) -> tuple[str, int]:
     db.commit()
     db.refresh(image)
 
-    async_result = sleep_and_update_status.delay(
-        image.id, config["sleep_duration"], correlation_id=correlation_id
-    )
+    async_result = sleep_and_update_status.delay(image.id, config["sleep_duration"])
 
     image.latest_job_id = async_result.id
     db.commit()

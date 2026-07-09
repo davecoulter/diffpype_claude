@@ -21,6 +21,10 @@ Core
    :members:
    :undoc-members:
 
+.. automodule:: src.core.tracing
+   :members:
+   :undoc-members:
+
 CLI
 ---
 

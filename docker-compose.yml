@@ -33,6 +33,15 @@ services:
     networks:
       - diffpype_net
 
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports:
+      - "${JAEGER_UI_PORT:-16686}:16686"
+    networks:
+      - diffpype_net
+
   api:
     build:
       context: .
@@ -46,6 +55,8 @@ services:
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-changeme}
       ADMIN_SECRET_KEY: ${ADMIN_SECRET_KEY:-diffpype-dev-secret-key-change-in-production}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:5173}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4317}
+      OTEL_SERVICE_NAME: diffpype-api
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
@@ -72,6 +83,8 @@ services:
       CELERY_TASK_MAX_RETRIES: ${CELERY_TASK_MAX_RETRIES:-3}
       CELERY_TASK_RETRY_DELAY: ${CELERY_TASK_RETRY_DELAY:-60}
       ENABLE_DB_BACKUP_CRON: ${ENABLE_DB_BACKUP_CRON:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4317}
+      OTEL_SERVICE_NAME: diffpype-worker-light
     deploy:
       resources:
         limits:
@@ -100,6 +113,8 @@ services:
       CELERY_TASK_MAX_RETRIES: ${CELERY_TASK_MAX_RETRIES:-3}
       CELERY_TASK_RETRY_DELAY: ${CELERY_TASK_RETRY_DELAY:-60}
       ENABLE_DB_BACKUP_CRON: ${ENABLE_DB_BACKUP_CRON:-false}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4317}
+      OTEL_SERVICE_NAME: diffpype-worker-heavy
     deploy:
       resources:
         limits:

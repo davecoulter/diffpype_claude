@@ -48,8 +48,8 @@ autodoc_mock_imports = [
     "uvicorn",
 ]
 
-# prd.md is the Product Requirements Document, not part of the ADR wiki; exclude
-# it from the Sphinx source tree so MyST does not flag it as an orphaned page.
-exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "prd.md"]
+# prd.md and tech_debt.md are reference documents, not part of the ADR wiki;
+# exclude them from the Sphinx source tree so MyST does not flag them as orphaned pages.
+exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "prd.md", "tech_debt.md"]
 
 html_theme = "sphinx_rtd_theme"

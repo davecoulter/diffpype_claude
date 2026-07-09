@@ -36,7 +36,7 @@ def test_sleep_and_update_status_marks_image_complete_and_stamps_times(mocker):
     fake_image = MagicMock(status=JobStatus.IN_PROCESS)
     mock_session = _make_session(mocker, fake_image)
 
-    sleep_and_update_status(42, 3, correlation_id="cid-1")
+    sleep_and_update_status(42, 3)
 
     mock_sleep.assert_called_once_with(3)
     assert mock_session.get.call_count == 2
@@ -101,7 +101,7 @@ def test_execute_cli_tool_calls_subprocess_with_correct_list(mocker):
     mock_session, _ = _make_cli_session(mocker, {"inim": "sci.fits", "c": "t"})
     mock_run = mocker.patch("src.worker.tasks.subprocess.run", return_value=MagicMock(stdout=""))
 
-    execute_cli_tool(1, "hotpants", correlation_id="cid-1")
+    execute_cli_tool(1, "hotpants")
 
     mock_session.get.assert_called_once_with(JobConfiguration, 1)
     mock_run.assert_called_once_with(

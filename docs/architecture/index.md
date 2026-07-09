@@ -29,4 +29,5 @@ work for that stage.
 20_security_and_access_control
 21_worker_reliability
 22_api_scalability
+23_observability
 ```

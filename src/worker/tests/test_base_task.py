@@ -71,13 +71,7 @@ def test_on_failure_rolls_back_and_marks_failed(mocker):
     mocker.patch("src.worker.base_task.SessionLocal", return_value=mock_session)
 
     task = DiffpypeTask()
-    task.on_failure(
-        RuntimeError("boom"),
-        "task-123",
-        (7, 2),
-        {"correlation_id": "cid-abc"},
-        None,
-    )
+    task.on_failure(RuntimeError("boom"), "task-123", (7, 2), {}, None)
 
     mock_session.rollback.assert_called_once()
     mock_session.get.assert_called_once_with(DummyImage, 7)

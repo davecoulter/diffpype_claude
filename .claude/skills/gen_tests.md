@@ -25,12 +25,15 @@ If any CLI step fails: diagnose, fix, and ask the user to re-run that step befor
 
 ## Phase 2 — Application QA
 
+Before presenting any steps, derive and count all QA steps from the arch doc. Label each step **QA Step X/N** so the user always knows their position and total remaining.
+
 Present **one step at a time**. After each step, explicitly ask: "Did that work? What did you see?" Do not move to the next step until the user confirms the current one passes.
 
 Derive QA steps from the arch doc sections. For each major behaviour:
 
 **Rules for writing QA steps:**
 - Before writing any QA step, verify that the full execution path for that behaviour exists (routes wired, services registered, queues configured, migrations applied, data seeded). If the path is not yet available, note it explicitly and skip the step rather than substituting a plausible-sounding but untestable verification.
+- For any feature/behavior exposed via both the API and the `diffpype-manage` CLI (per CLAUDE.md's API/CLI Parity rule), include a live QA step exercising **both** boundaries — not just one. Do not assume API-path testing implicitly covers the CLI path; they delegate to the same service-layer function but may diverge in surrounding behavior (tracing, logging context, error surfacing) that isn't part of that shared function.
 - Every failure path involving real infrastructure (DB, Redis, broker, filesystem) must have a concrete manual step — never skip these as "covered by unit tests"
 - Specify the exact command to trigger the behaviour (prefer `docker compose exec worker celery ... call` to bypass service-layer validation for failure paths)
 - Specify exactly where to look: Portainer container name and log event name, Flower tab and field, DBeaver table and column, browser status code
