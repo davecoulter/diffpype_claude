@@ -22,6 +22,7 @@ def sleep_and_update_status(image_id: int, sleep_duration: int = 5) -> None:
     db = SessionLocal()
     try:
         image = db.get(DummyImage, image_id)
+        assert image is not None, f"DummyImage {image_id} not found"
         image.job_started_at = func.now()
         db.commit()
     finally:
@@ -32,6 +33,7 @@ def sleep_and_update_status(image_id: int, sleep_duration: int = 5) -> None:
     db = SessionLocal()
     try:
         image = db.get(DummyImage, image_id)
+        assert image is not None, f"DummyImage {image_id} not found"
         image.status = JobStatus.COMPLETE
         image.job_finished_at = func.now()
         db.commit()
@@ -62,16 +64,23 @@ def db_backup_cron() -> None:
 def execute_cli_tool(job_config_id: int, executable: str) -> None:
     """Execute an external CLI tool using the kwargs stored in JobConfiguration."""
     log = get_logger()
-    log.info("execute_cli_tool_started", job_config_id=job_config_id, executable=executable)
+    log.info(
+        "execute_cli_tool_started", job_config_id=job_config_id, executable=executable
+    )
 
     db = SessionLocal()
     try:
         job_config = db.get(JobConfiguration, job_config_id)
+        assert job_config is not None, f"JobConfiguration {job_config_id} not found"
         cmd_list = build_cli_command(executable, job_config.job_kwargs or {})
         job_config.execution_command = " ".join(cmd_list)
         db.commit()
 
         result = subprocess.run(cmd_list, capture_output=True, text=True, check=True)
-        log.info("execute_cli_tool_completed", job_config_id=job_config_id, stdout=result.stdout)
+        log.info(
+            "execute_cli_tool_completed",
+            job_config_id=job_config_id,
+            stdout=result.stdout,
+        )
     finally:
         db.close()

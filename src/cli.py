@@ -107,7 +107,9 @@ def build_parser() -> argparse.ArgumentParser:
     subparsers = parser.add_subparsers(dest="command", metavar="COMMAND")
     subparsers.required = True
 
-    subparsers.add_parser("seed-db", help="Seed foundational records into the database.")
+    subparsers.add_parser(
+        "seed-db", help="Seed foundational records into the database."
+    )
 
     get_dummy = subparsers.add_parser(
         "get-dummy", help="Fetch and display the status of a DummyImage by ID."

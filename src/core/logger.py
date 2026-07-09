@@ -4,6 +4,7 @@ All components stream JSON logs to stdout via ``structlog``. The correlation ID 
 sourced from the active OpenTelemetry trace, so a single request or task can be
 traced across the FastAPI, service, and Celery boundaries without manual threading.
 """
+
 import logging
 
 import structlog

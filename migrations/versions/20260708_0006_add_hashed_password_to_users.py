@@ -22,6 +22,7 @@ def upgrade() -> None:
     # Step 2: backfill existing rows with a placeholder bcrypt hash of "changeme".
     # seed-db must be re-run after migration to stamp the real ADMIN_PASSWORD hash.
     import bcrypt as _bcrypt
+
     placeholder = _bcrypt.hashpw(b"changeme", _bcrypt.gensalt()).decode("utf-8")
     op.get_bind().execute(
         text("UPDATE users SET hashed_password = :h WHERE hashed_password IS NULL"),

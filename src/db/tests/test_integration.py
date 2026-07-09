@@ -6,6 +6,7 @@ These tests validate that:
   - Status transitions write and read back the expected Python enum instances.
   - The JobConfiguration table and its relationship to DummyImage round-trip correctly.
 """
+
 from sqlalchemy import text
 from sqlalchemy.orm import sessionmaker
 
@@ -140,7 +141,12 @@ def test_job_configuration_timestamps_populated(db, user):
 
 def test_user_roundtrip(db):
     """User model persists and round-trips all fields correctly."""
-    u = User(username="testuser", email="test@example.com", is_active=True, hashed_password="dummy_hash_for_testing")
+    u = User(
+        username="testuser",
+        email="test@example.com",
+        is_active=True,
+        hashed_password="dummy_hash_for_testing",
+    )
     db.add(u)
     db.flush()
     db.refresh(u)
@@ -157,9 +163,15 @@ def test_user_roundtrip(db):
 def test_hashed_password_roundtrip(db):
     """hashed_password field persists to and reads back from the database correctly."""
     import bcrypt
+
     hashed = bcrypt.hashpw(b"testpassword", bcrypt.gensalt()).decode("utf-8")
 
-    u = User(username="pwdtestuser", email="pwdtest@example.com", is_active=True, hashed_password=hashed)
+    u = User(
+        username="pwdtestuser",
+        email="pwdtest@example.com",
+        is_active=True,
+        hashed_password=hashed,
+    )
     db.add(u)
     db.flush()
     db.refresh(u)
@@ -201,7 +213,9 @@ def test_sysadmin_seeding_links_step_definition_to_user(mocker, test_engine):
         assert sysadmin is not None
         assert sysadmin.email == "admin@diffpype.local"
         assert sysadmin.is_active is True
-        assert sysadmin.hashed_password is not None and len(sysadmin.hashed_password) > 0
+        assert (
+            sysadmin.hashed_password is not None and len(sysadmin.hashed_password) > 0
+        )
         step = db.query(StepDefinition).filter_by(name="dummy_sleep").one_or_none()
         assert step is not None
         assert step.user_id == sysadmin.id

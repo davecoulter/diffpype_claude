@@ -23,7 +23,7 @@ For each failing item, produce: (a) a plain-language description of what is miss
 - [ ] The doc notes that `.env.example` and `.env` must be kept in sync.
 
 **§C — Dependencies & Packages**
-- [ ] Every new package is named with a pinned version, or an explicit reason it's unpinned.
+- [ ] Every new package/tool is named, with the desired capability/behavior it provides. Exact version pins are resolved and verified by the implementor at `runPrompt` time (via `uv lock`, `pre-commit` hook install, or equivalent), not dictated by the architecture doc — unless the architect is flagging a specific known cross-package compatibility constraint (e.g., "X and Y must be from the same release line"), which should be stated as a constraint, not a literal version string.
 - [ ] Any package that uses framework-style class keyword arguments (e.g. `model=User`) is flagged as a candidate for `autodoc_mock_imports` in `docs/conf.py`.
 
 **§D — Database**
@@ -49,8 +49,9 @@ For each failing item, produce: (a) a plain-language description of what is miss
 ---
 
 **Output format:**
-1. **PASS/FAIL per section** — one line each, no elaboration if passing.
-2. **Failing items** — for each: what's missing + a plain-language explanation. If a failing item represents a genuine design decision (not a gap with an obvious fill), flag it as **Decision Required**, present the options with a recommendation and rationale, and wait for the user to confirm before including it in the Gemini prompt block.
-3. **Decomposition recommendation** — only if §A fails.
-4. **Consolidated Gemini revision prompt** — a single copyable block combining all confirmed revision instructions. Label it clearly so the user can paste it directly. Only include items where the fix is confirmed (i.e., no open Decision Required items remain unresolved).
-5. **Exit condition** — when all items pass or are explicitly N/A: *"This document is ready for `runPrompt`."*
+1. **Summary table first** — a markdown table with columns `Section | Result`, one row per §A–§G, `✅ PASS` / `❌ FAIL` / `✅ PASS (N/A)` / `⚠️ Decision needed`. No elaboration in the table itself.
+2. **"What fixed cleanly" bullet list** — on re-assessment passes, briefly note which prior failing items are now resolved, before detailing anything still open.
+3. **Failing items, each under its own subheading** — what's missing + a plain-language explanation. Use a comparison table instead of prose wherever a side-by-side (e.g. option A vs. option B, old behavior vs. new) would be clearer. If a failing item represents a genuine design decision (not a gap with an obvious fill), flag it as **Decision Required**, present the options with a recommendation and rationale, and wait for the user to confirm before including it in the Gemini prompt block.
+4. **Decomposition recommendation** — only if §A fails.
+5. **Consolidated Gemini revision prompt** — a single copyable fenced code block combining all confirmed revision instructions. Label it clearly so the user can paste it directly. Only include items where the fix is confirmed (i.e., no open Decision Required items remain unresolved).
+6. **Exit condition** — when all items pass or are explicitly N/A: *"This document is ready for `runPrompt`."*

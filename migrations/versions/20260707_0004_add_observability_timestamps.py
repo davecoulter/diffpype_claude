@@ -10,6 +10,7 @@ job_configurations via the TimestampMixin, plus explicit job-timing columns
 columns carry a ``now()`` server default so existing rows are backfilled and the
 NOT NULL constraints hold.
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa

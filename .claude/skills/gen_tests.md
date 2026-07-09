@@ -4,6 +4,8 @@
 **Action:**
 Read `docs/architecture/[filename.md]`. Derive the complete test plan for this implementation. Then run it interactively, one step at a time — do not dump the full list and wait. Present each step, wait for the user to execute and report the result, then proceed.
 
+**Presentation format (both phases):** Give each command its own small fenced code block — never combine multiple commands into one block. Most chat UIs put a copy button on each fenced block automatically, so one-command-per-block gives per-command copy ergonomics natively, no HTML/JS needed. Precede each command with a bold step label (e.g. `**06 · Pre-commit**`), follow it with an italicized `*Expect: ...*` line stating the observable success condition. Keep this entirely inline in chat — do not publish it as an Artifact. Test plans reference internal project details (branch names, env var names, infra topology) that don't need to leave the local conversation just for a nicer visual format; inline markdown is local, lightweight, and sufficient.
+
 ---
 
 ## Phase 1 — CLI Verification
@@ -34,6 +36,7 @@ Derive QA steps from the arch doc sections. For each major behaviour:
 **Rules for writing QA steps:**
 - Before writing any QA step, verify that the full execution path for that behaviour exists (routes wired, services registered, queues configured, migrations applied, data seeded). If the path is not yet available, note it explicitly and skip the step rather than substituting a plausible-sounding but untestable verification.
 - For any feature/behavior exposed via both the API and the `diffpype-manage` CLI (per CLAUDE.md's API/CLI Parity rule), include a live QA step exercising **both** boundaries — not just one. Do not assume API-path testing implicitly covers the CLI path; they delegate to the same service-layer function but may diverge in surrounding behavior (tracing, logging context, error surfacing) that isn't part of that shared function.
+- When a QA step runs a devops/tooling command inside a container (`docker compose exec ...`), verify that container's environment actually satisfies the tool's dependencies — don't assume parity with commands that already work there. A tool working in-container (e.g. `pytest`) doesn't mean every tool does; some (e.g. `pre-commit`, which needs `.git`) are host/git-repo-context tools that must run locally instead.
 - Every failure path involving real infrastructure (DB, Redis, broker, filesystem) must have a concrete manual step — never skip these as "covered by unit tests"
 - Specify the exact command to trigger the behaviour (prefer `docker compose exec worker celery ... call` to bypass service-layer validation for failure paths)
 - Specify exactly where to look: Portainer container name and log event name, Flower tab and field, DBeaver table and column, browser status code

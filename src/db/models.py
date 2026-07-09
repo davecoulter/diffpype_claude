@@ -1,4 +1,5 @@
 """SQLAlchemy ORM models for Diffpype domain entities and job provenance."""
+
 from datetime import datetime
 
 import sqlalchemy as sa
@@ -41,8 +42,12 @@ class User(TimestampMixin, Base):
     )
 
     projects: Mapped[list["Project"]] = relationship(back_populates="user")
-    step_definitions: Mapped[list["StepDefinition"]] = relationship(back_populates="user")
-    job_configurations: Mapped[list["JobConfiguration"]] = relationship(back_populates="user")
+    step_definitions: Mapped[list["StepDefinition"]] = relationship(
+        back_populates="user"
+    )
+    job_configurations: Mapped[list["JobConfiguration"]] = relationship(
+        back_populates="user"
+    )
 
 
 class Project(TimestampMixin, Base):

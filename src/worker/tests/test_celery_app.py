@@ -1,4 +1,5 @@
 """Unit tests for Celery application configuration."""
+
 from unittest.mock import MagicMock
 
 from celery import Celery
@@ -12,7 +13,10 @@ def test_beat_schedule_populated_when_cron_enabled():
     cfg = MagicMock(enable_db_backup_cron=True)
     _configure_beat_schedule(app, cfg)
     assert "nightly-db-backup" in app.conf.beat_schedule
-    assert app.conf.beat_schedule["nightly-db-backup"]["task"] == "src.worker.tasks.db_backup_cron"
+    assert (
+        app.conf.beat_schedule["nightly-db-backup"]["task"]
+        == "src.worker.tasks.db_backup_cron"
+    )
 
 
 def test_beat_schedule_absent_when_cron_disabled():

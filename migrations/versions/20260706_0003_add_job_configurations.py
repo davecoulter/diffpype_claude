@@ -8,6 +8,7 @@ Normalizes job provenance: introduces the job_configurations table (job_kwargs +
 execution_command) and replaces the DummyImage.job_kwargs shortcut with a
 job_configuration_id foreign key.
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa

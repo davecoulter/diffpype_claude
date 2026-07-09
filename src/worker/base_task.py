@@ -6,6 +6,7 @@ invalid) transaction state with an explicit ``rollback``, and transitions the
 domain entity to ``JobStatus.FAILED`` so downstream consumers (the polling UI)
 observe a terminal state instead of an orphaned ``in_process`` record.
 """
+
 import celery
 from sqlalchemy import func
 from sqlalchemy.exc import OperationalError as SAOperationalError
@@ -22,7 +23,13 @@ class DiffpypeTask(celery.Task):
 
     # Include SAOperationalError so transient DB connection drops are retried,
     # not just raw socket-level IOError/ConnectionError.
-    autoretry_for = (IOError, OSError, ConnectionError, TimeoutError, SAOperationalError)
+    autoretry_for = (
+        IOError,
+        OSError,
+        ConnectionError,
+        TimeoutError,
+        SAOperationalError,
+    )
     max_retries = settings.celery_task_max_retries
     default_retry_delay = settings.celery_task_retry_delay
 
@@ -56,7 +63,10 @@ class DiffpypeTask(celery.Task):
             db.close()
 
         try:
-            from src.worker.tasks import dlq_dump  # lazy import avoids circular dependency
+            from src.worker.tasks import (
+                dlq_dump,
+            )  # lazy import avoids circular dependency
+
             dlq_dump.apply_async(
                 kwargs={
                     "failed_task_name": self.name or task_id,

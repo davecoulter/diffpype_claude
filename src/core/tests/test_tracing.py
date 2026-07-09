@@ -1,4 +1,5 @@
 """Unit tests for OpenTelemetry setup in src.core.tracing."""
+
 from unittest.mock import MagicMock
 
 import src.core.tracing as tracing

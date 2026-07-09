@@ -27,9 +27,7 @@ def seed_step_definitions() -> None:
             sysadmin.hashed_password = hashed
             db.flush()
 
-        exists = (
-            db.query(StepDefinition).filter_by(name="dummy_sleep").one_or_none()
-        )
+        exists = db.query(StepDefinition).filter_by(name="dummy_sleep").one_or_none()
         if exists is None:
             db.add(
                 StepDefinition(

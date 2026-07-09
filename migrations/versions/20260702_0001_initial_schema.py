@@ -5,6 +5,7 @@ Revises:
 Create Date: 2026-07-02
 
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -18,9 +19,7 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.execute(
-        "CREATE TYPE celery_queue AS ENUM ('light', 'heavy_memory', 'gpu')"
-    )
+    op.execute("CREATE TYPE celery_queue AS ENUM ('light', 'heavy_memory', 'gpu')")
     op.execute(
         "CREATE TYPE job_status AS ENUM ('pending', 'in_process', 'complete', 'failed')"
     )
@@ -33,7 +32,9 @@ def upgrade() -> None:
         sa.Column(
             "queue",
             postgresql.ENUM(
-                "light", "heavy_memory", "gpu",
+                "light",
+                "heavy_memory",
+                "gpu",
                 name="celery_queue",
                 create_type=False,
             ),
@@ -48,7 +49,10 @@ def upgrade() -> None:
         sa.Column(
             "status",
             postgresql.ENUM(
-                "pending", "in_process", "complete", "failed",
+                "pending",
+                "in_process",
+                "complete",
+                "failed",
                 name="job_status",
                 create_type=False,
             ),

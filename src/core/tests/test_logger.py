@@ -1,4 +1,5 @@
 """Unit tests for the structlog trace-correlation processor."""
+
 from unittest.mock import MagicMock
 
 from src.core.logger import _add_trace_correlation_id

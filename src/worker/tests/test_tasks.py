@@ -52,7 +52,9 @@ def test_sleep_and_update_status_marks_image_complete_and_stamps_times(mocker):
 def test_sleep_and_update_status_records_start_before_sleeping(mocker):
     """job_started_at must be committed before the sleep so a mid-run crash is recoverable."""
     order = []
-    mocker.patch("src.worker.tasks.time.sleep", side_effect=lambda *_: order.append("sleep"))
+    mocker.patch(
+        "src.worker.tasks.time.sleep", side_effect=lambda *_: order.append("sleep")
+    )
     mocker.patch("src.worker.tasks.func.now", return_value="NOW")
     mock_session = _make_session(mocker)
     mock_session.commit.side_effect = lambda: order.append("commit")
@@ -90,7 +92,9 @@ def test_sleep_and_update_status_propagates_exception_and_closes_session(mocker)
 
 
 def _make_cli_session(mocker, job_kwargs=None):
-    fake_config = MagicMock(spec=JobConfiguration, job_kwargs=job_kwargs or {"inim": "sci.fits"})
+    fake_config = MagicMock(
+        spec=JobConfiguration, job_kwargs=job_kwargs or {"inim": "sci.fits"}
+    )
     mock_session = MagicMock()
     mock_session.get.return_value = fake_config
     mocker.patch("src.worker.tasks.SessionLocal", return_value=mock_session)
@@ -99,7 +103,9 @@ def _make_cli_session(mocker, job_kwargs=None):
 
 def test_execute_cli_tool_calls_subprocess_with_correct_list(mocker):
     mock_session, _ = _make_cli_session(mocker, {"inim": "sci.fits", "c": "t"})
-    mock_run = mocker.patch("src.worker.tasks.subprocess.run", return_value=MagicMock(stdout=""))
+    mock_run = mocker.patch(
+        "src.worker.tasks.subprocess.run", return_value=MagicMock(stdout="")
+    )
 
     execute_cli_tool(1, "hotpants")
 
@@ -138,8 +144,12 @@ def test_execute_cli_tool_closes_session_on_subprocess_error(mocker):
 def test_execute_cli_tool_handles_none_job_kwargs(mocker):
     mock_session, _ = _make_cli_session(mocker, None)
     mock_session.get.return_value = MagicMock(spec=JobConfiguration, job_kwargs=None)
-    mock_run = mocker.patch("src.worker.tasks.subprocess.run", return_value=MagicMock(stdout=""))
+    mock_run = mocker.patch(
+        "src.worker.tasks.subprocess.run", return_value=MagicMock(stdout="")
+    )
 
     execute_cli_tool(4, "mytool")
 
-    mock_run.assert_called_once_with(["mytool"], capture_output=True, text=True, check=True)
+    mock_run.assert_called_once_with(
+        ["mytool"], capture_output=True, text=True, check=True
+    )

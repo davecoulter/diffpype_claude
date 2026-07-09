@@ -4,7 +4,7 @@ import pytest
 from alembic import command
 from alembic.config import Config
 from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 TEST_DATABASE_URL = os.environ.get(
     "TEST_DATABASE_URL",
@@ -28,7 +28,12 @@ def user(db):
     """Create a test owner User in the current test transaction."""
     from src.db.models import User
 
-    u = User(username="testowner", email="testowner@diffpype.local", is_active=True, hashed_password="dummy_hash_for_testing")
+    u = User(
+        username="testowner",
+        email="testowner@diffpype.local",
+        is_active=True,
+        hashed_password="dummy_hash_for_testing",
+    )
     db.add(u)
     db.flush()
     return u
