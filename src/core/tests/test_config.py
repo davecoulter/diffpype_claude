@@ -1,4 +1,5 @@
 """Unit tests for the Settings configuration class."""
+
 import pytest
 from pydantic import ValidationError
 

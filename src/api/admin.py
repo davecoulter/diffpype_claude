@@ -1,4 +1,5 @@
 """SQLAdmin model views and authentication backend for the /admin dashboard."""
+
 import bcrypt
 from sqladmin import ModelView
 from sqladmin.authentication import AuthenticationBackend
@@ -16,9 +17,15 @@ class DiffpypeAuthBackend(AuthenticationBackend):
         form = await request.form()
         username = form.get("username", "")
         password = form.get("password", "")
+        if not isinstance(username, str) or not isinstance(password, str):
+            return False
         db = SessionLocal()
         try:
-            user = db.query(User).filter_by(username=username, is_active=True).one_or_none()
+            user = (
+                db.query(User)
+                .filter_by(username=username, is_active=True)
+                .one_or_none()
+            )
             if user and bcrypt.checkpw(
                 password.encode("utf-8"), user.hashed_password.encode("utf-8")
             ):
@@ -57,7 +64,9 @@ class UserAdmin(ModelView, model=User):
         User.job_configurations,
     ]
 
-    async def on_model_change(self, data: dict, model: User, is_created: bool, request: Request) -> None:
+    async def on_model_change(
+        self, data: dict, model: User, is_created: bool, request: Request
+    ) -> None:
         """Hash plain-text password input before persisting to the database."""
         if "hashed_password" in data and data["hashed_password"]:
             data["hashed_password"] = bcrypt.hashpw(
@@ -68,21 +77,38 @@ class UserAdmin(ModelView, model=User):
 class ProjectAdmin(ModelView, model=Project):
     """Admin view for inspecting and managing Project records."""
 
-    column_list = [Project.id, Project.name, Project.description, Project.user_id, Project.created_at]
+    column_list = [
+        Project.id,
+        Project.name,
+        Project.description,
+        Project.user_id,
+        Project.created_at,
+    ]
     form_excluded_columns = [Project.created_at, Project.updated_at]
 
 
 class StepDefinitionAdmin(ModelView, model=StepDefinition):
     """Admin view for inspecting and managing StepDefinition records."""
 
-    column_list = [StepDefinition.id, StepDefinition.name, StepDefinition.task_name, StepDefinition.queue]
+    column_list = [
+        StepDefinition.id,
+        StepDefinition.name,
+        StepDefinition.task_name,
+        StepDefinition.queue,
+    ]
     form_excluded_columns = [StepDefinition.created_at, StepDefinition.updated_at]
 
 
 class DummyImageAdmin(ModelView, model=DummyImage):
     """Admin view for inspecting and managing DummyImage records."""
 
-    column_list = [DummyImage.id, DummyImage.status, DummyImage.latest_job_id, DummyImage.job_started_at, DummyImage.created_at]
+    column_list = [
+        DummyImage.id,
+        DummyImage.status,
+        DummyImage.latest_job_id,
+        DummyImage.job_started_at,
+        DummyImage.created_at,
+    ]
     form_excluded_columns = [
         DummyImage.created_at,
         DummyImage.updated_at,
@@ -95,7 +121,12 @@ class DummyImageAdmin(ModelView, model=DummyImage):
 class JobConfigurationAdmin(ModelView, model=JobConfiguration):
     """Admin view for inspecting and managing JobConfiguration records."""
 
-    column_list = [JobConfiguration.id, JobConfiguration.user_id, JobConfiguration.execution_command, JobConfiguration.created_at]
+    column_list = [
+        JobConfiguration.id,
+        JobConfiguration.user_id,
+        JobConfiguration.execution_command,
+        JobConfiguration.created_at,
+    ]
     form_excluded_columns = [
         JobConfiguration.created_at,
         JobConfiguration.updated_at,

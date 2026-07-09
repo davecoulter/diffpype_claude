@@ -20,6 +20,11 @@ This document tracks small workarounds, dependency pins, and known limitations t
 *   **Resolution condition:** Wrap `cmd_run_dummy` (or `dispatch_dummy_job`) in an explicit `tracer.start_as_current_span(...)` if/when CLI-side observability parity with the API becomes a priority. Uncertain value — the core propagation requirement (trace context flows automatically from CLI-triggered dispatch through to the worker) already works without this.
 *   **Source:** Verified live during doc 23 QA, 2026-07-09. Originally logged in `prd.md`'s Deferred/Future Scope; moved here 2026-07-09.
 
+#### Publish a `db` image to ghcr.io
+*   **What:** `docker-compose.prod.yml` (doc 24) keeps a `build:` context for `db` — installing Q3C/HealpixAlchemy Postgres extensions via `docker/db.Dockerfile` — because no `ghcr.io/davecoulter/diffpype-db` image is ever built or published. CI's `build-and-push` job in `.github/workflows/ci.yml` only has a matrix for `api` and `worker`; an oversight from whichever earlier doc introduced that job, which didn't account for `db` needing the same treatment.
+*   **Resolution condition:** Add a `db` entry to the `build-and-push` job's matrix (`image: db, dockerfile: docker/db.Dockerfile`), then update `docker-compose.prod.yml` to pull `ghcr.io/davecoulter/diffpype-db:${IMAGE_TAG}` instead of building locally, for a truly build-context-free production deployment.
+*   **Source:** Identified during doc 24 implementation, 2026-07-09.
+
 ### Resolved Items
 *(none yet)*
 
@@ -27,3 +32,4 @@ This document tracks small workarounds, dependency pins, and known limitations t
 #### 2026-07-09
 *   **Action:** Created this document to track technical debt separately from product-scope deferrals (`prd.md`) and agentic guardrails (`CLAUDE.md`). Added the `setuptools<81` pin as the first tracked item.
 *   **Action:** Ported two items previously scattered elsewhere: the React Router future-flag warning (moved from `CLAUDE.md`'s Clarifications) and the CLI root-span gap (moved from `prd.md`'s Deferred/Future Scope). Both are code-level gaps in already-shipped work, not unbuilt product features, so they fit this document's scope better than `prd.md`'s.
+*   **Action:** Added the missing `db` ghcr.io image publishing gap, found while implementing doc 24's `docker-compose.prod.yml`.

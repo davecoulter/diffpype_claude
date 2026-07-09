@@ -6,6 +6,7 @@ reads ``OTEL_EXPORTER_OTLP_ENDPOINT`` natively per the OTel specification; it is
 attached when that variable is present, so unit tests and local runs create spans
 without a live collector.
 """
+
 import os
 
 from opentelemetry import trace

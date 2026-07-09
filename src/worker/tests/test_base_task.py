@@ -10,7 +10,13 @@ from src.worker.base_task import DiffpypeTask
 
 def test_retryable_exceptions_are_configured():
     """Transient I/O, network, and DB connection errors must trigger automatic retries."""
-    for exc_type in (IOError, OSError, ConnectionError, TimeoutError, SAOperationalError):
+    for exc_type in (
+        IOError,
+        OSError,
+        ConnectionError,
+        TimeoutError,
+        SAOperationalError,
+    ):
         assert exc_type in DiffpypeTask.autoretry_for
 
 

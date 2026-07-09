@@ -1,3 +1,5 @@
+from typing import NoReturn
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -34,7 +36,7 @@ admin.add_view(DummyImageAdmin)
 admin.add_view(JobConfigurationAdmin)
 
 
-def sqladmin_exception_handler(request: Request, exc: Exception) -> None:
+def sqladmin_exception_handler(request: Request, exc: Exception) -> NoReturn:
     """Log exceptions raised inside the mounted sqladmin sub-app, then re-raise.
 
     sqladmin is a separate ASGI sub-application, so exceptions in its routes never
@@ -62,7 +64,9 @@ app.add_middleware(
 async def correlation_id_middleware(request: Request, call_next):
     """Expose the active OTel trace ID as the X-Correlation-ID response header."""
     span_context = trace.get_current_span().get_span_context()
-    correlation_id = format(span_context.trace_id, "032x") if span_context.is_valid else None
+    correlation_id = (
+        format(span_context.trace_id, "032x") if span_context.is_valid else None
+    )
     response = await call_next(request)
     if correlation_id is not None:
         response.headers["X-Correlation-ID"] = correlation_id

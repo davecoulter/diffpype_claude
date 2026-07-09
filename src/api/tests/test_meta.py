@@ -34,7 +34,10 @@ def test_get_statuses_returns_db_driven_values(client, mock_db):
     data = response.json()
     assert len(data) == 4
     assert [item["value"] for item in data] == [
-        "pending", "in_process", "complete", "failed"
+        "pending",
+        "in_process",
+        "complete",
+        "failed",
     ]
     assert data[1]["label"] == "In Process"
     assert data[2]["color"] == "#2e7d32"

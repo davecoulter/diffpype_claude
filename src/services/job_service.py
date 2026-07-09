@@ -1,4 +1,5 @@
 """Business logic for dispatching dummy jobs, shared by the API and CLI boundaries."""
+
 from sqlalchemy.orm import Session
 
 from src.core.logger import get_logger

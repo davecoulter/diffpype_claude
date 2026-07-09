@@ -52,6 +52,9 @@ jobs:
       - name: Install dependencies
         run: uv sync --frozen --group test
 
+      - name: Run pre-commit (ruff + mypy)
+        run: uv run pre-commit run --all-files
+
       - name: Install Sphinx dependencies
         run: uv pip install -r docs/sphinx_requirements.txt
 

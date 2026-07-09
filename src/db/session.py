@@ -1,4 +1,5 @@
 """SQLAlchemy engine and session factory for the application database."""
+
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
