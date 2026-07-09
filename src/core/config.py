@@ -17,6 +17,8 @@ class Settings(BaseSettings):
     celery_task_max_retries: int = 3
     celery_task_retry_delay: int = 60
     enable_db_backup_cron: bool = False
+    db_pool_size: int = 20
+    db_max_overflow: int = 10
 
 
 settings = Settings()

@@ -49,5 +49,11 @@ Summarise each QA step that was run and its confirmed outcome — one line per s
 
 
 **Final reminders:**
-- Confirm the post-implementation verification checklist from `run_arch.md` has been completed before opening the PR.
 - Output text only — do not run `gh pr create`. Open the PR via the GitHub UI.
+- After the PR is merged, provide these post-merge cleanup commands:
+
+```bash
+git checkout main
+git pull origin main
+git branch -d feature/[slug]
+```

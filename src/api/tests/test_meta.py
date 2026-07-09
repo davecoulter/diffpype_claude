@@ -28,7 +28,7 @@ def test_get_statuses_returns_db_driven_values(client, mock_db):
         MagicMock(value="failed"),
     ]
 
-    response = client.get("/meta/statuses")
+    response = client.get("/api/v1/meta/statuses")
 
     assert response.status_code == 200
     data = response.json()
