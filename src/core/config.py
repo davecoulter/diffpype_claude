@@ -14,6 +14,9 @@ class Settings(BaseSettings):
     admin_password: str = "changeme"
     admin_secret_key: str = "diffpype-dev-secret-key-change-in-production"
     cors_origins: str = "http://localhost:5173"
+    celery_task_max_retries: int = 3
+    celery_task_retry_delay: int = 60
+    enable_db_backup_cron: bool = False
 
 
 settings = Settings()

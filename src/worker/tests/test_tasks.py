@@ -5,7 +5,22 @@ import pytest
 
 from src.db.enums import JobStatus
 from src.db.models import DummyImage, JobConfiguration
-from src.worker.tasks import execute_cli_tool, sleep_and_update_status
+from src.worker.tasks import dlq_dump, execute_cli_tool, sleep_and_update_status
+
+
+def test_dlq_dump_logs_failed_task_payload(mocker):
+    """dlq_dump must emit a structured warning with the full failure context."""
+    mock_logger = MagicMock()
+    mocker.patch("src.worker.tasks.get_logger", return_value=mock_logger)
+
+    dlq_dump("src.worker.tasks.some_task", {"image_id": 42}, "Connection refused")
+
+    mock_logger.warning.assert_called_once_with(
+        "task_dead_lettered",
+        failed_task_name="src.worker.tasks.some_task",
+        task_kwargs={"image_id": 42},
+        error_msg="Connection refused",
+    )
 
 
 def _make_session(mocker, fake_image=None):

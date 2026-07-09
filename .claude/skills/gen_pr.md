@@ -29,11 +29,20 @@ Then produce the following, in order:
 - [bullet: what changed and why]
 - [bullet: what changed and why]
 
-## Test plan
-- [ ] [Specific manual verification step]
-- [ ] Full test suite passes: `docker compose exec api uv run pytest --cov=src --cov-fail-under=90`
-- [ ] Sphinx build passes: `sphinx-build -b html docs docs/_build/html -W`
-- [ ] [Any Docker rebuild or worker restart required]
+## CLI Verification
+All steps completed prior to PR creation via `genTests`.
+- [x] Branch confirmed: `feature/[slug]`
+- [x] Images rebuilt: `docker compose build [services]`
+- [x] Containers recreated: `docker compose up -d [services]`
+- [x] Migrations applied (or N/A — no model changes)
+- [x] Test suite passed: `docker compose exec api uv run pytest --cov=src --cov-fail-under=90 -q`
+- [x] Sphinx build passed (local)
+
+## Application QA
+All steps completed and verified prior to PR creation via `genTests`.
+Summarise each QA step that was run and its confirmed outcome — one line per step, past tense:
+- [x] [What was tested] — [what was observed that confirmed it worked]
+- [x] [What was tested] — [what was observed that confirmed it worked]
 
 🤖 Generated with [Claude Code](https://claude.ai/code)
 ```
