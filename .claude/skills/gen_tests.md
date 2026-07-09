@@ -30,6 +30,7 @@ Present **one step at a time**. After each step, explicitly ask: "Did that work?
 Derive QA steps from the arch doc sections. For each major behaviour:
 
 **Rules for writing QA steps:**
+- Before writing any QA step, verify that the full execution path for that behaviour exists (routes wired, services registered, queues configured, migrations applied, data seeded). If the path is not yet available, note it explicitly and skip the step rather than substituting a plausible-sounding but untestable verification.
 - Every failure path involving real infrastructure (DB, Redis, broker, filesystem) must have a concrete manual step — never skip these as "covered by unit tests"
 - Specify the exact command to trigger the behaviour (prefer `docker compose exec worker celery ... call` to bypass service-layer validation for failure paths)
 - Specify exactly where to look: Portainer container name and log event name, Flower tab and field, DBeaver table and column, browser status code

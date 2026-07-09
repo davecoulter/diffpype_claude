@@ -44,8 +44,10 @@ export default function DashboardPage() {
     queryKey: ["jobs/dummy", imageId],
     queryFn: () => getDummyJobStatus(imageId!),
     enabled: imageId !== null,
-    refetchInterval: (query) =>
-      TERMINAL.has(query.state.data?.status ?? "") ? false : 1000,
+    refetchInterval: (query) => {
+      if (query.state.error) return false;
+      return TERMINAL.has(query.state.data?.status ?? "") ? false : 1000;
+    },
   });
 
   const { mutate: runJob, isPending } = useMutation({

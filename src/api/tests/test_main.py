@@ -15,7 +15,7 @@ def test_correlation_id_header_is_present_and_valid_uuid(mocker):
     )
     client = TestClient(app)
 
-    response = client.post("/jobs/dummy", json=VALID_PAYLOAD)
+    response = client.post("/api/v1/jobs/dummy", json=VALID_PAYLOAD)
 
     assert response.status_code == 200
     correlation_id = response.headers["X-Correlation-ID"]
@@ -30,7 +30,7 @@ def test_unhandled_exception_returns_500(mocker):
     )
     client = TestClient(app, raise_server_exceptions=False)
 
-    response = client.post("/jobs/dummy", json=VALID_PAYLOAD)
+    response = client.post("/api/v1/jobs/dummy", json=VALID_PAYLOAD)
 
     assert response.status_code == 500
     assert response.json() == {"detail": "Internal Server Error"}
@@ -49,6 +49,19 @@ def test_admin_unauthenticated_redirects_to_login():
     assert "/admin/login" in response.headers["location"]
 
 
+def test_old_unversioned_jobs_path_returns_404():
+    """Old /jobs/... routes must 404 after the /api/v1 prefix was introduced."""
+    client = TestClient(app)
+    assert client.post("/jobs/dummy", json=VALID_PAYLOAD).status_code == 404
+    assert client.get("/jobs/dummy/1").status_code == 404
+
+
+def test_old_unversioned_meta_path_returns_404():
+    """Old /meta/... routes must 404 after the /api/v1 prefix was introduced."""
+    client = TestClient(app)
+    assert client.get("/meta/statuses").status_code == 404
+
+
 def test_cors_rejects_disallowed_origin(mocker):
     mocker.patch(
         "src.services.job_service.dispatch_dummy_job",
@@ -56,7 +69,7 @@ def test_cors_rejects_disallowed_origin(mocker):
     )
     client = TestClient(app)
     response = client.post(
-        "/jobs/dummy",
+        "/api/v1/jobs/dummy",
         json=VALID_PAYLOAD,
         headers={"Origin": "http://evil.example.com"},
     )

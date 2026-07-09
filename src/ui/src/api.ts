@@ -1,4 +1,5 @@
 const API_URL = import.meta.env.VITE_API_URL ?? "http://localhost:8000";
+const API_BASE = `${API_URL}/api/v1`;
 
 export interface JobDispatchResponse {
   job_id: string;
@@ -21,7 +22,7 @@ export interface StatusMetadata {
 }
 
 export async function createDummyJob(): Promise<JobDispatchResponse> {
-  const response = await fetch(`${API_URL}/jobs/dummy`, {
+  const response = await fetch(`${API_BASE}/jobs/dummy`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
@@ -34,13 +35,13 @@ export async function createDummyJob(): Promise<JobDispatchResponse> {
 }
 
 export async function getDummyJobStatus(imageId: number): Promise<DummyImageStatus> {
-  const response = await fetch(`${API_URL}/jobs/dummy/${imageId}`);
+  const response = await fetch(`${API_BASE}/jobs/dummy/${imageId}`);
   if (!response.ok) throw new Error(`Failed to fetch job status: ${response.status}`);
   return response.json();
 }
 
 export async function getStatuses(): Promise<StatusMetadata[]> {
-  const response = await fetch(`${API_URL}/meta/statuses`);
+  const response = await fetch(`${API_BASE}/meta/statuses`);
   if (!response.ok) throw new Error(`Failed to fetch status metadata: ${response.status}`);
   return response.json();
 }

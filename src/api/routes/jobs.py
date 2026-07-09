@@ -6,6 +6,9 @@ from src.db.session import get_db
 from src.services import job_service
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
+# Routes use synchronous `def` intentionally: our psycopg2 driver is synchronous, and
+# using `async def` would block the event loop. Uvicorn runs sync handlers in a thread
+# pool, which is the correct trade-off until an async driver (asyncpg) is adopted.
 
 
 @router.post("/dummy", response_model=JobDispatchResponse)

@@ -38,3 +38,10 @@ class DummyJobConfig(BaseJobConfig):
 class JobSubmitRequest(BaseModel):
     task_name: str
     config: DummyJobConfig
+
+
+class PaginationParams(BaseModel):
+    """Standard pagination controls for list endpoints; enforces safe upper bounds."""
+
+    limit: int = Field(default=100, ge=1, le=1000)
+    offset: int = Field(default=0, ge=0)
