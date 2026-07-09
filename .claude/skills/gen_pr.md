@@ -50,10 +50,16 @@ Summarise each QA step that was run and its confirmed outcome — one line per s
 
 **Final reminders:**
 - Output text only — do not run `gh pr create`. Open the PR via the GitHub UI.
-- After the PR is merged, provide these post-merge cleanup commands:
+- After the PR is merged, provide these post-merge cleanup commands — each command in its own fenced code block (one command per block, matching `genTests`' convention), not combined into a single block:
 
 ```bash
 git checkout main
+```
+
+```bash
 git pull origin main
+```
+
+```bash
 git branch -d feature/[slug]
 ```
