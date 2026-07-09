@@ -45,6 +45,23 @@ def sleep_and_update_status(
     log.info("task_completed", image_id=image_id)
 
 
+@celery_app.task(name="src.worker.tasks.dlq_dump")
+def dlq_dump(failed_task_name: str, task_kwargs: dict, error_msg: str) -> None:
+    """Log a permanently failed task payload to the dead letter queue."""
+    get_logger().warning(
+        "task_dead_lettered",
+        failed_task_name=failed_task_name,
+        task_kwargs=task_kwargs,
+        error_msg=error_msg,
+    )
+
+
+@celery_app.task(name="src.worker.tasks.db_backup_cron")
+def db_backup_cron() -> None:
+    """Placeholder for nightly database backup, triggered by Celery Beat."""
+    get_logger().info("db_backup_cron_triggered", detail="Nightly backup triggered")
+
+
 @celery_app.task(base=DiffpypeTask, name="src.worker.tasks.execute_cli_tool")
 def execute_cli_tool(
     job_config_id: int, executable: str, correlation_id: str | None = None

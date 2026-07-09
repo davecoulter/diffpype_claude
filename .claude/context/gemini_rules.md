@@ -34,10 +34,15 @@ With a validated document, the user triggers execution:
 `runPrompt on XX_name.md`
 Claude first recommends the optimal model (Sonnet for standard implementation, Opus for complex architectural work) and pauses for human authorization. Once authorized, Claude confirms the feature branch is active, implements the code, enforces 90% test coverage (`--cov-fail-under=90`), and ensures zero Sphinx warnings. Claude then logs its work directly into the `## Logs` section of the MD file.
 
-**Step 5: PR Generation (Claude)**
-After the user completes the post-implementation verification checklist (Docker rebuilds, Alembic upgrades, pytest), the user triggers:
+**Step 5: Interactive QA (Claude)**
+The user triggers:
+`genTests on XX_name.md`
+Claude runs an interactive, step-by-step QA session — CLI verification first, then Application QA one step at a time. Claude waits for the user to confirm each step before proceeding. Any failures are diagnosed and fixed before moving on. Only when all steps pass does Claude declare the implementation ready for PR.
+
+**Step 6: PR Generation (Claude)**
+After `genTests` completes, the user triggers:
 `genPR on XX_name.md`
-Claude reads the git diff and generates the PR title, commit message, and body. The user merges the PR via GitHub.
+Claude reads the git diff and generates the PR title, commit message, and body — with all verification boxes pre-checked, reflecting what was actually tested. The user merges the PR via GitHub.
 
 ## 3. Guiding Principles
 *   **Small Blast Radii:** Scope is king. If an architecture document touches more than one independent workstream (e.g., Security, Celery Reliability, and Distributed Tracing), it must be decomposed into separate, sequentially merged stages.

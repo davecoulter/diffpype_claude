@@ -46,3 +46,6 @@ filterwarnings = [
     "ignore:Please use `import python_multipart`:PendingDeprecationWarning",
     "ignore:'crypt' is deprecated:DeprecationWarning",
 ]
+
+[tool.coverage.run]
+omit = ["src/*/tests/*"]

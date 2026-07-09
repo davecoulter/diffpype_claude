@@ -6,7 +6,7 @@ When the user invokes this command, you must internally expand it into the follo
 
 "Please review `docs/architecture/[filename.md]`.
 
-Following your Model Evaluation Phase rule, please analyze the complexity of this request, recommend the optimal model, and **pause for my authorization**.
+Following your Model Evaluation Phase rule, analyze the complexity of this request and output your model recommendation and rationale. Then **STOP COMPLETELY** — do not read any files, write any code, or take any other action. Wait for explicit human authorization (e.g. "proceed", "engage") before continuing. This pause is mandatory even when the model choice is obvious.
 
 Once authorized:
 * **Branch first:** Confirm the feature branch already exists (run `git branch --show-current`). The branch should have been created before the arch doc was written, because the arch doc file itself is a tracked change. If we are still on `main`, stop and ask the user to run `git checkout -b feature/[short-slug]` before writing any code.
@@ -17,10 +17,9 @@ Once authorized:
 * **Logging:** Log your work in the MD file when finished.
 
 **Post-Implementation Verification Checklist** — remind me to run these in order before opening a PR:
-1. `git branch --show-current` — confirm we are on a feature branch, not main (branch should have been created before the arch doc was written)
-2. `docker compose build api worker_light worker_heavy` — if models, packages, or worker code changed
-3. `docker compose up -d api` — recreate the api container from the fresh image
-4. `docker compose exec api alembic upgrade head` — apply any new migrations
-5. `docker compose restart worker_light worker_heavy` — clear stale in-memory task code
-6. `docker compose exec api uv run pytest --cov=src --cov-fail-under=90` — full test suite
-7. `sphinx-build -b html docs docs/_build/html -W` — zero Sphinx warnings before PR"
+1. `git branch --show-current` — confirm we are on a feature branch, not main
+2. `docker compose build api worker_light worker_heavy` — skip if only test files or docs changed
+3. `docker compose up -d api worker_light worker_heavy` — recreates containers from fresh images; also clears stale worker memory
+4. `docker compose exec api alembic upgrade head` — skip if no SQLAlchemy model changes
+5. `docker compose exec api uv run pytest --cov=src --cov-fail-under=90 -q` — full test suite including integration tests against the real DB
+6. **Sphinx — run locally, not in Docker** (docs/ is not mounted in the container): `DATABASE_URL="postgresql+psycopg2://dummy:dummy@localhost/dummy" REDIS_URL="redis://localhost:6379/0" uv run sphinx-build -b html docs docs/_build/html -W`"

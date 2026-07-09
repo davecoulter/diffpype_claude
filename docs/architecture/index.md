@@ -27,4 +27,5 @@ work for that stage.
 18_observability_and_docs
 19_user_auth_and_admin
 20_security_and_access_control
+21_worker_reliability
 ```
