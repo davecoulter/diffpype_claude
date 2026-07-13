@@ -50,6 +50,7 @@ test = [
     "sphinx-rtd-theme==3.0.2",
     "pre-commit",
     "mypy",
+    "sphinxcontrib-mermaid",
 ]
 
 [tool.pytest.ini_options]

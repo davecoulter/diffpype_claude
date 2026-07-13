@@ -24,7 +24,21 @@ extensions = [
     "sphinx.ext.viewcode",
     "sphinx.ext.napoleon",
     "myst_parser",
+    "sphinxcontrib.mermaid",
 ]
+
+# Client-side rendering: emits the diagram source + a mermaid.js script tag, and the
+# browser renders it at view-time. Deliberately not using the Mermaid CLI (mmdc)
+# pre-rendering mode, which needs Node.js + a headless browser in the build env.
+mermaid_version = "11.4.1"
+
+# sphinxcontrib-mermaid ships its own pan/zoom (D3-powered) and fullscreen-modal
+# support natively — mermaid_fullscreen defaults to True already; mermaid_d3_zoom
+# defaults to False and must be opted into. Using these instead of a hand-rolled
+# svg-pan-zoom integration: it's built with real knowledge of Mermaid's async
+# rendering lifecycle, and works correctly inside the fullscreen modal too.
+mermaid_d3_zoom = True
+mermaid_height = "70vh"
 
 # The architecture ADRs intentionally start at an H5/H6 heading convention for
 # their in-repo Markdown rendering. Suppress only MyST's heading-level lint so a
@@ -55,3 +69,4 @@ autodoc_mock_imports = [
 exclude_patterns = ["_build", "Thumbs.db", ".DS_Store", "prd.md", "tech_debt.md"]
 
 html_theme = "sphinx_rtd_theme"
+html_static_path = ["_static"]
