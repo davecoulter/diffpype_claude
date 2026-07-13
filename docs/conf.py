@@ -52,6 +52,7 @@ autodoc_mock_imports = [
     "celery",
     "fastapi",
     "itsdangerous",
+    "opentelemetry",
     "psycopg2",
     "pydantic",
     "pydantic_settings",
@@ -60,6 +61,7 @@ autodoc_mock_imports = [
     "sqlalchemy",
     "src.api.admin",
     "starlette",
+    "starlette_exporter",
     "structlog",
     "uvicorn",
 ]
