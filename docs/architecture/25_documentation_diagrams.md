@@ -112,3 +112,10 @@ Doc 25 is complete — `sphinxcontrib-mermaid` integration, the `docs/diagrams/`
 *   Making the network background transparent surfaced a real contrast problem: the default white edge lines only read against a dark background, and became hard to see once the surrounding area could show through as lighter in some contexts. Set a uniform line color via `linkStyle default stroke:#D9A64A,stroke-width:1.5px` (a warm amber) — a mid-tone color maintains reasonable contrast against both light and dark grounds, unlike white (fails on light) or black (fails on dark).
 *   Lightened `containerBg`'s fill from `#232B30` to `#313D45` (and its stroke from `#4A5A63` to `#5A6C77` proportionally) per request — the containers were reading as quite dark/harsh.
 *   **Verification:** `sphinx-build -W` zero warnings; full test suite unaffected.
+
+###### 2026-07-13 — CI failure: `html_static_path` entry no longer exists
+
+*   **Bug:** CI's Sphinx build step failed with `WARNING: html_static_path entry '_static' does not exist` (promoted to a hard error by `-W`). Discovered from a red ❌ CI run, not locally.
+*   **Root cause:** `docs/conf.py` still set `html_static_path = ["_static"]` from the abandoned custom `svg-pan-zoom` stack. Once those vendored JS/CSS files were deleted, `docs/_static/` had no tracked contents — git doesn't track empty directories, so the directory itself was silently absent from a fresh checkout. It still existed as an empty, untracked directory on the local dev machine, which is why `sphinx-build` passed locally but failed in CI's clean clone.
+*   **Fix:** Removed the dead `html_static_path = ["_static"]` line from `docs/conf.py`; deleted the local empty `docs/_static/` directory. Re-verified with a from-scratch build (`rm -rf docs/_build` first, to simulate a clean checkout) — zero warnings, `build succeeded.`
+*   **Lesson:** for config referencing a directory populated only by generated/vendored files, verify against a clean checkout (or at least `rm -rf` the target build dir) before trusting a local Sphinx pass — stale local directory state can mask a warning that only surfaces in CI.
