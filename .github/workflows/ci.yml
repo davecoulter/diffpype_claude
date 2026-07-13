@@ -70,7 +70,16 @@ jobs:
             --cov=src \
             --cov-report=term-missing \
             --cov-fail-under=90 \
-            --junitxml=results.xml
+            --junitxml=results.xml | tee pytest-output.txt
+          exit_code=${PIPESTATUS[0]}
+          {
+            echo "## Coverage Report"
+            echo
+            echo '```'
+            awk '/^---------- coverage:/,0' pytest-output.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit "$exit_code"
 
       - name: Publish test results
         uses: EnricoMi/publish-unit-test-result-action@v2
