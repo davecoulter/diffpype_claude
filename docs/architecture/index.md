@@ -31,4 +31,5 @@ work for that stage.
 22_api_scalability
 23_observability
 24_devops_tooling
+25_documentation_diagrams
 ```

@@ -9,6 +9,7 @@ Diffpype is a distributed astronomical data-reduction and difference-imaging pip
 
    cli_guide
    architecture/index
+   diagrams/index
 
 Core
 ----

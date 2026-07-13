@@ -37,6 +37,7 @@ All steps completed prior to PR creation via `genTests`.
 - [x] Migrations applied (or N/A — no model changes)
 - [x] Test suite passed: `docker compose exec api uv run pytest --cov=src --cov-fail-under=90 -q`
 - [x] Sphinx build passed (local)
+- [x] `docs/diagrams/infrastructure_topology.md` updated and visually reviewed in rendered HTML — or N/A if this change didn't touch infrastructure topology
 
 ## Application QA
 All steps completed and verified prior to PR creation via `genTests`.

@@ -5,6 +5,11 @@
 ### Preamble
 This document defines the overarching workflows, user interactions, and macro-level behavior of the Diffpype system. It focuses on the "What" and "Why." Technical implementation details (the "How") are reserved for the `docs/architecture/` documents.
 
+### Core Value Proposition
+Diffpype's value is not the astronomical algorithms themselves — source detection, photometry, and cross-matching are well-understood and scriptable by any researcher. The value is the orchestration, parallelization, and bookkeeping required to run those algorithms reliably at the scale of modern surveys (Euclid, Roman, Rubin): tracking which images belong to which field/tile/filter/epoch, gating dependent stages correctly, retrying transient failures, and making the full provenance of every derived product inspectable and re-runnable.
+
+If Diffpype successfully sets up all fields, tiles, epochs, and difference-image pairs, and gives researchers a web app to view them, diagnose reduction issues, and re-run stages, they can bring their own simple analysis scripts on top of it. What they can't easily build themselves is the massive parallelization and bookkeeping — and that same bookkeeping is the prerequisite for automation at survey scale. This distinction should drive scope decisions: build the orchestration layer as the core product; keep the science layer (detection, classification) as something that plugs into it, whether via a researcher's own script or a downstream consumer application.
+
 ### User Journey & Workflow Phases
 
 #### Phase 0: Project Initialization
@@ -52,17 +57,29 @@ This document defines the overarching workflows, user interactions, and macro-le
 *   **CLI:** A programmatic command-line interface capable of driving the exact same workflow without the Web UI.
 
 ### Deferred / Future Scope (v2+)
-To ensure fast, iterative development of the core infrastructure, the following downstream pipeline features are deferred from the initial implementation:
-*   Source detection on difference images.
-*   Multi-source requirement gates (epoch/filter) for promoting artifacts to "astrophysical" status.
-*   Extracting photometry from difference images.
-*   Clustering detected sources into unique objects and composing light curves.
+To ensure fast, iterative development of the core infrastructure, the following downstream pipeline features are deferred from the initial implementation. Per the Core Value Proposition above, the v1 MVP's job is to reliably produce fields/tiles/epochs/difference-image pairs and make them inspectable; this stage is where the "science" starts layering on top.
+
+**Detection & Alerting Pipeline (ordered):**
+1.  Source detection on difference images via SExtractor, producing catalogs.
+2.  Catalog-driven photometry.
+3.  Clustering subsequent detections across filter and time, associating repeat detections with the same physical source.
+4.  Astrophysical validation gate: promote a cluster to candidate status based on detection count, cross-filter consistency, PSF shape matching, and artifact screening.
+5.  Light curve extraction for validated candidates.
+6.  Publish validated candidates to a Kafka alert stream.
+
+Prior art for this pipeline exists in `prototype/` (e.g. `prototype/src/jwst_diff/source_match.py`) — to be reviewed and redesigned when this phase is scoped, not ported as-is. The prototype's Django/MySQL schema (`prototype/djangotutorial/diffpype/models.py`) is also the conceptual ancestor of the current Postgres schema and Celery dispatch pattern, and its notebooks (`prototype/notebooks/`) effectively served as a static proxy UI — both worth reviewing together as design reference before this phase is architected.
+
+**Downstream Consumer Architecture (Kafka):** Diffpype's role at the end of the detection pipeline is to be a *producer* — publishing validated candidates to a Kafka topic without needing to know who consumes them. Planned downstream consumers include RISE (an ML system compiling photometry/spectra/light curves, performing host-galaxy matching and SED fits, and autoencoding these attributes) and Teglon (a gravitational-wave pipeline networking Rubin and Roman). Each downstream consumer runs its own independent worker fleet. This keeps Diffpype's internal Celery/Redis DAG orchestration focused purely on image production; Kafka is the boundary for external broadcast to consumers that may not exist yet. CLAUDE.md's Core Tech Stack Constraints do not currently mention Kafka — this should be added deliberately when this phase is actually scoped, not assumed.
 
 **Observability & Monitoring Infrastructure:**
 *   Standing up an actual Prometheus server to scrape the `/metrics` endpoint (added in architecture doc 23) and retain it as a time series, plus a Grafana dashboard for visualization/alerting. Currently the endpoint exposes request metrics but nothing collects or graphs them over time.
 *   Wiring Jaeger's SPM ("Monitor" tab) to a spanmetrics-connector-backed Prometheus instance, so per-service/per-operation request-rate/error-rate/duration graphs are available directly in the Jaeger UI. Surfaced when the Monitor tab returned a 501 ("metrics querying is currently disabled") during doc 23 QA — expected, since no SPM backend is configured; tracing itself is unaffected.
 
 ### Logs
+#### 2026-07-09 (2)
+*   **Action:** Added a "Core Value Proposition" section — the orchestration/bookkeeping-at-scale distinction that should drive future scope decisions (build the orchestration layer; keep detection/classification as something that plugs into it).
+*   **Action:** Replaced the terse Deferred/Future Scope bullets with the actual ordered detection-and-alerting pipeline (SExtractor → photometry → clustering → astrophysical validation gate → light curves → Kafka publish), plus a Downstream Consumer Architecture section describing the Kafka producer/consumer boundary and naming RISE and Teglon as planned consumers. Noted `prototype/` as prior art to review before this phase is architected, not to port as-is.
+
 #### 2026-07-09
 *   **Action:** Added an "Observability & Monitoring Infrastructure" subsection to Deferred / Future Scope, capturing follow-on work surfaced during doc 23 (Observability) QA: a real Prometheus server + Grafana dashboard, and Jaeger SPM wiring.
 *   **Action:** Moved the CLI root-span tracing item out of this section to `docs/tech_debt.md` — it's a known gap in already-shipped code, not an unbuilt product feature, so it fits that document's scope better.

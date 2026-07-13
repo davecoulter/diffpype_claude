@@ -8,6 +8,8 @@
 *   **Drafting:** Writes the initial `docs/architecture/XX_name.md` files.
 *   **Refinement:** Updates the architecture documents based strictly on Claude's `assessPrompt` feedback until a clean pass is achieved.
 
+**Exception: Claude-Authored Docs.** When Claude and the user design something together in conversation — not Claude implementing a Gemini-drafted spec, but genuinely co-designing it — Claude may draft the architecture doc directly rather than routing through Gemini. This applies only to narrow, low-blast-radius changes (tooling/docs/config, not application logic, data models, or security-surface changes). Claude must still self-run the full `assessPrompt` checklist before `runPrompt`, even as the same party who drafted it — the mechanical checks still catch real gaps, even though self-review can't replace an independent reviewer's ability to catch design blind spots. If scope grows beyond "narrow," revert to Gemini-drafts/Claude-reviews as normal.
+
 **Claude (Lead Engineer & Implementer)**
 *   **Assessment (`assessPrompt`):** Acts as the pragmatic gatekeeper. Reviews Gemini's drafts against a strict 7-point checklist (Scope, Env Vars, Packages, DB, Testing, Sequencing, Compliance). Recommends decomposition if the blast radius is too large.
 *   **Implementation (`runPrompt`):** Executes the authorized architecture document. Recommends the optimal model (Sonnet/Opus) and pauses for human authorization before writing any code. Handles branch creation, writing Python/React code, generating Alembic migrations, and writing unit/integration tests.
@@ -55,6 +57,9 @@ Claude reads the git diff and generates the PR title, commit message, and body �
 *   **Package Versioning:** Gemini should describe new packages/tools by the desired capability or behavior they provide, not exact pinned versions — Claude resolves and verifies exact versions at `runPrompt` time (via `uv lock`, `pre-commit` hook installation, or equivalent), since only the implementer has live tooling access to confirm compatibility. A guessed pin from an architect with no live verification is a real failure mode, not a theoretical one — doc 23's `opentelemetry-instrumentation` pin broke against `setuptools` in exactly this way. Exception: if Gemini is aware of a specific cross-package compatibility constraint (e.g., two packages must be from the same release line), state that constraint explicitly rather than expressing it as a literal version string.
 
 ## Logs
+###### 2026-07-09 — Claude-Authored Docs exception added
+Added an exception to Roles & Responsibilities: for narrow, low-blast-radius, genuinely co-designed changes (docs/tooling/config, not application logic), Claude may draft the architecture doc directly instead of routing through Gemini, provided Claude still self-runs the full `assessPrompt` checklist. Avoids wasted motion re-briefing Gemini on a conversation it wasn't part of, while keeping the checklist's mechanical safeguards intact.
+
 ###### 2026-07-09 — Package Versioning principle added
 Added the Package Versioning guiding principle after doc 23's `opentelemetry-instrumentation`/`setuptools` pin conflict demonstrated that architect-time version guesses can't be verified without live tooling access. Gemini now describes desired capability, not exact pins; Claude resolves and verifies at `runPrompt` time.
 
