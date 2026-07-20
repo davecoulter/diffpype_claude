@@ -96,6 +96,8 @@ flowchart TB
     portainer_node -.-> ui_c
     portainer_node -.-> db_c
     portainer_node -.-> redis_c
+    portainer_node -.-> flower_c
+    portainer_node -.-> jaeger_c
     flower_node -.-> redis_c
     jaeger_node -.-> api_c
     jaeger_node -.-> worker_c
@@ -108,14 +110,21 @@ flowchart TB
     classDef cliLayer fill:#6B7280,stroke:#454A52,color:#fff
     classDef coreLayer fill:#A9B4BC,stroke:#6D7882,color:#1a1a1a
     classDef monitor fill:#F4E7EA,stroke:#C0546A,color:#7A2B3B,stroke-dasharray: 4 3
-    classDef containerBg fill:#313D45,stroke:#5A6C77,color:#fff
+    classDef containerBg fill:#3F4F5A,stroke:#6A7E8B,color:#fff
     classDef spacer fill:transparent,stroke:transparent,color:transparent
     classDef networkBg fill:transparent,stroke:#5A6C77,color:#fff
 
     class db_c,redis_c,api_c,worker_c,ui_c,jaeger_c,flower_c,portainer_c containerBg
     class network networkBg
 
-    linkStyle default stroke:#D9A64A,stroke-width:2.5px
+    %% Tier 1 (default): solid amber — configured application data flow between components
+    linkStyle default stroke:#D9A64A,stroke-width:4px
+    %% Invisible spacer links used only to center nodes within db_c, worker_c, portainer_c — must override the amber default or they render as dangling solid lines
+    linkStyle 0,1,11,17,18 stroke:none,stroke-width:0
+    %% Tier 3: dashed cool steel gray — Portainer manages containers at the Docker daemon level, independent of what's running inside them
+    linkStyle 25,26,27,28,29,30,31 stroke:#8F97A0,stroke-width:4px
+    %% Tier 2: dashed rose — Jaeger/Flower/DBeaver observe a specific process's exposed port/protocol (OTLP, Celery/Redis state, Postgres wire protocol)
+    linkStyle 32,33,34,35 stroke:#C0546A,stroke-width:4px
 ```
 
 ## Legend
@@ -136,8 +145,9 @@ flowchart TB
 
 | Style | Meaning |
 |---|---|
-| Solid line | Data flow (producer → consumer) |
-| Dashed line | Watches / observes (monitor → target) |
+| <span style="display:inline-block;width:24px;height:0;border-top:4px solid #D9A64A;"></span> Solid amber | Application data flow — configured communication between components (producer → consumer) |
+| <span style="display:inline-block;width:24px;height:0;border-top:4px dashed #C0546A;"></span> Dashed rose | Process/protocol-level observability — a tool watching a specific exposed port or protocol of a running process (Jaeger via OTLP, Flower via Celery/Redis state, DBeaver via the Postgres wire protocol) |
+| <span style="display:inline-block;width:24px;height:0;border-top:4px dashed #8F97A0;"></span> Dashed steel gray | Container-level infrastructure management — Portainer, operating at the Docker daemon level, independent of what's running inside a container |
 
 ## Container Responsibilities
 
