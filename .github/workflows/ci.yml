@@ -103,6 +103,8 @@ jobs:
             dockerfile: docker/api.Dockerfile
           - image: worker
             dockerfile: docker/worker.Dockerfile
+          - image: db
+            dockerfile: docker/db.Dockerfile
     steps:
       - uses: actions/checkout@v4
 

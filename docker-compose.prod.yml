@@ -2,9 +2,7 @@ name: diffpype
 
 services:
   db:
-    build:
-      context: .
-      dockerfile: docker/db.Dockerfile
+    image: ghcr.io/davecoulter/diffpype_claude-db:${IMAGE_TAG:-main}
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
@@ -32,7 +30,7 @@ services:
       - diffpype_net
 
   api:
-    image: ghcr.io/davecoulter/diffpype-api:${IMAGE_TAG:-main}
+    image: ghcr.io/davecoulter/diffpype_claude-api:${IMAGE_TAG:-main}
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
@@ -57,7 +55,7 @@ services:
       - diffpype_net
 
   worker_light:
-    image: ghcr.io/davecoulter/diffpype-worker:${IMAGE_TAG:-main}
+    image: ghcr.io/davecoulter/diffpype_claude-worker:${IMAGE_TAG:-main}
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
@@ -82,7 +80,7 @@ services:
       - diffpype_net
 
   worker_heavy:
-    image: ghcr.io/davecoulter/diffpype-worker:${IMAGE_TAG:-main}
+    image: ghcr.io/davecoulter/diffpype_claude-worker:${IMAGE_TAG:-main}
     environment:
       DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0

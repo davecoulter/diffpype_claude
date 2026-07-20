@@ -20,15 +20,23 @@ This document tracks small workarounds, dependency pins, and known limitations t
 *   **Resolution condition:** Wrap `cmd_run_dummy` (or `dispatch_dummy_job`) in an explicit `tracer.start_as_current_span(...)` if/when CLI-side observability parity with the API becomes a priority. Uncertain value — the core propagation requirement (trace context flows automatically from CLI-triggered dispatch through to the worker) already works without this.
 *   **Source:** Verified live during doc 23 QA, 2026-07-09. Originally logged in `prd.md`'s Deferred/Future Scope; moved here 2026-07-09.
 
-#### Publish a `db` image to ghcr.io
-*   **What:** `docker-compose.prod.yml` (doc 24) keeps a `build:` context for `db` — installing Q3C/HealpixAlchemy Postgres extensions via `docker/db.Dockerfile` — because no `ghcr.io/davecoulter/diffpype-db` image is ever built or published. CI's `build-and-push` job in `.github/workflows/ci.yml` only has a matrix for `api` and `worker`; an oversight from whichever earlier doc introduced that job, which didn't account for `db` needing the same treatment.
-*   **Resolution condition:** Add a `db` entry to the `build-and-push` job's matrix (`image: db, dockerfile: docker/db.Dockerfile`), then update `docker-compose.prod.yml` to pull `ghcr.io/davecoulter/diffpype-db:${IMAGE_TAG}` instead of building locally, for a truly build-context-free production deployment.
-*   **Source:** Identified during doc 24 implementation, 2026-07-09.
+#### Implement real `db_backup_cron` + host-accessible backup/restore path
+*   **What:** `ENABLE_DB_BACKUP_CRON` (doc 21) wires a nightly Celery Beat schedule to `src.worker.tasks.db_backup_cron`, but that task is a stub — it only logs `"Nightly backup triggered"` and performs no actual backup. There is currently no backup or restore mechanism for the `db` service's data at all.
+*   **Resolution condition:** Implement `db_backup_cron` to actually run `pg_dump` (or `pg_basebackup`) against `db`, plus a corresponding restore path (CLI command or documented procedure). Proposed approach (discussed 2026-07-20): a hybrid volume strategy — keep `diffpype_db_data` (the live Postgres data directory) as a Docker-managed named volume, since Postgres's fsync/WAL durability and POSIX locking guarantees are safest there (this matters most on Docker Desktop for Mac, where a bind mount crosses the VM boundary via VirtioFS/gRPC-FUSE — not a concern on the real Linux production target, but still the right default regardless), and add a *second*, separate bind-mounted directory used only as the backup task's output destination, so dumps land on a real host path without touching how the live data directory is stored.
+*   **Source:** Raised 2026-07-20 while reviewing the `db` image change in `docker-compose.prod.yml`; ties back to the `ENABLE_DB_BACKUP_CRON` toggle introduced in doc 21 (2026-07-09).
 
 ### Resolved Items
-*(none yet)*
+
+#### Publish a `db` image to ghcr.io
+*   **What it was:** `docker-compose.prod.yml` kept a `build:` context for `db` instead of pulling a published image, because CI's `build-and-push` matrix only covered `api` and `worker`.
+*   **Resolution:** Added a `db` entry to the matrix in `.github/workflows/ci.yml`, and switched `docker-compose.prod.yml` to `image: ghcr.io/davecoulter/diffpype_claude-db:${IMAGE_TAG:-main}`. Note the corrected name — the image is `diffpype_claude-db`, not `diffpype-db` as originally recorded here; `github.repository` resolves to `davecoulter/diffpype_claude`, a naming mismatch first caught in the `api`/`worker` images and fixed the same way here. Guarded by `src/core/tests/test_docker_compose_prod.py`.
+*   **Source:** Identified during doc 24 implementation, 2026-07-09. Resolved 2026-07-20.
 
 ### Logs
+#### 2026-07-20
+*   **Action:** Resolved the "Publish a `db` image to ghcr.io" item — added `db` to `ci.yml`'s `build-and-push` matrix and switched `docker-compose.prod.yml` to pull `ghcr.io/davecoulter/diffpype_claude-db` (corrected from the originally-recorded `diffpype-db` name). Added a regression test in `src/core/tests/test_docker_compose_prod.py` covering all three images (`api`, `worker`, `db`) plus confirming `db` no longer builds locally.
+*   **Action:** Added the `db_backup_cron`/backup-restore/hybrid-volume item above, surfaced while discussing production storage for the `db` service.
+
 #### 2026-07-09
 *   **Action:** Created this document to track technical debt separately from product-scope deferrals (`prd.md`) and agentic guardrails (`CLAUDE.md`). Added the `setuptools<81` pin as the first tracked item.
 *   **Action:** Ported two items previously scattered elsewhere: the React Router future-flag warning (moved from `CLAUDE.md`'s Clarifications) and the CLI root-span gap (moved from `prd.md`'s Deferred/Future Scope). Both are code-level gaps in already-shipped work, not unbuilt product features, so they fit this document's scope better than `prd.md`'s.
