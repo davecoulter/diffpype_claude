@@ -25,6 +25,11 @@ This document tracks small workarounds, dependency pins, and known limitations t
 *   **Resolution condition:** Implement `db_backup_cron` to actually run `pg_dump` (or `pg_basebackup`) against `db`, plus a corresponding restore path (CLI command or documented procedure). Proposed approach (discussed 2026-07-20): a hybrid volume strategy — keep `diffpype_db_data` (the live Postgres data directory) as a Docker-managed named volume, since Postgres's fsync/WAL durability and POSIX locking guarantees are safest there (this matters most on Docker Desktop for Mac, where a bind mount crosses the VM boundary via VirtioFS/gRPC-FUSE — not a concern on the real Linux production target, but still the right default regardless), and add a *second*, separate bind-mounted directory used only as the backup task's output destination, so dumps land on a real host path without touching how the live data directory is stored.
 *   **Source:** Raised 2026-07-20 while reviewing the `db` image change in `docker-compose.prod.yml`; ties back to the `ENABLE_DB_BACKUP_CRON` toggle introduced in doc 21 (2026-07-09).
 
+#### Publish multi-arch (`linux/amd64` + `linux/arm64`) images
+*   **What:** `ci.yml`'s `build-and-push` job runs on GitHub's `ubuntu-latest` runners and never sets a target `platforms:`, so `docker/build-push-action` only produces `linux/amd64` images for `api`, `worker`, and `db`. Pulling and running them on an Apple Silicon (`arm64`) machine — confirmed live via `docker compose -f docker-compose.prod.yml up -d` on 2026-07-20 — works, but only under emulation, with a `platform does not match` warning for every affected service.
+*   **Resolution condition:** Add `docker/setup-qemu-action` and `docker/setup-buildx-action` to the `build-and-push` job, and set `platforms: linux/amd64,linux/arm64` on the existing `docker/build-push-action` step for all three images. Produces a single multi-arch manifest per tag, so `docker pull` transparently selects the right architecture on any host — removing the warning and the emulation overhead rather than just detecting it. Expected cost: longer CI build time for the emulated `arm64` leg.
+*   **Source:** Surfaced 2026-07-20 while verifying the `db` image publish fix locally on an Apple Silicon Mac.
+
 ### Resolved Items
 
 #### Publish a `db` image to ghcr.io
@@ -36,6 +41,7 @@ This document tracks small workarounds, dependency pins, and known limitations t
 #### 2026-07-20
 *   **Action:** Resolved the "Publish a `db` image to ghcr.io" item — added `db` to `ci.yml`'s `build-and-push` matrix and switched `docker-compose.prod.yml` to pull `ghcr.io/davecoulter/diffpype_claude-db` (corrected from the originally-recorded `diffpype-db` name). Added a regression test in `src/core/tests/test_docker_compose_prod.py` covering all three images (`api`, `worker`, `db`) plus confirming `db` no longer builds locally.
 *   **Action:** Added the `db_backup_cron`/backup-restore/hybrid-volume item above, surfaced while discussing production storage for the `db` service.
+*   **Action:** Verified the `db` image publish fix end-to-end via `docker compose -f docker-compose.prod.yml pull && up -d` on an Apple Silicon Mac — all three services pulled and started successfully, confirming the ghcr.io naming fix works. Surfaced a `linux/amd64`-only platform warning in the process; logged as a new multi-arch tech-debt item above rather than fixed inline, since it's orthogonal to the naming fix.
 
 #### 2026-07-09
 *   **Action:** Created this document to track technical debt separately from product-scope deferrals (`prd.md`) and agentic guardrails (`CLAUDE.md`). Added the `setuptools<81` pin as the first tracked item.
