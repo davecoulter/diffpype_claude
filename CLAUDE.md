@@ -59,7 +59,7 @@ Claude may only suggest packages or write code that aligns with this strict base
 *   **Architecture & Design:** Refer to numbered files in `docs/architecture/` (e.g., `01_...`) for stage-by-stage design and prompting.
 *   **Technical Debt:** Tracked as GitHub Issues labeled `tech-debt` — workarounds, dependency pins, and known limitations to revisit later. File new items via the `logIssue` skill rather than a markdown file.
 *   **Claude Skills:** Refer to `.claude/skills/` (or `.claude/rules/`) for repeatable execution scripts.
-*   **Collaborative Scratch Space:** `collab_scratch/` is a git-ignored directory for handoff artifacts between the user and Claude (drafts, demo pages, one-off files) that shouldn't be version-controlled. Prefer it over ephemeral session-only temp directories whenever the user may want to revisit or reopen something later.
+*   **Collaborative Scratch Space:** `collab_scratch/` is a git-ignored directory for handoff artifacts between the user and Claude (drafts, demo pages, one-off files) that shouldn't be version-controlled. Prefer it over ephemeral session-only temp directories whenever the user may want to revisit or reopen something later. Claude may create, edit, and delete files within `collab_scratch/` freely, without pausing to confirm — it is untracked, disposable scratch space by design.
 
 ### Clarifications & Logs
 *(Claude will append a running log of global architecture decisions and ask clarifying questions here.)*
