@@ -223,9 +223,15 @@ def test_sysadmin_seeding_links_step_definition_to_user(mocker, test_engine):
         db.close()
 
     # Committed outside the transactional fixture — must clean up explicitly so the
-    # unique constraint on username doesn't bleed into subsequent tests.
+    # unique constraint on username doesn't bleed into subsequent tests. Delete
+    # JobConfiguration rows referencing this user first: any code path that dispatches
+    # a job as sysadmin (including manual CLI testing against this DB) can create one,
+    # and it would otherwise block the User delete via fk_job_configurations_user_id.
     cleanup = TestSession()
     try:
+        sysadmin_id = cleanup.query(User.id).filter_by(username="sysadmin").scalar()
+        if sysadmin_id is not None:
+            cleanup.query(JobConfiguration).filter_by(user_id=sysadmin_id).delete()
         cleanup.query(StepDefinition).filter_by(name="dummy_sleep").delete()
         cleanup.query(User).filter_by(username="sysadmin").delete()
         cleanup.commit()
