@@ -40,3 +40,7 @@ Full architecture docs (numbered design stages, CLI guide, infrastructure diagra
 ## Project Status
 
 This is a **Stage 0 walking skeleton** — the reusable plumbing is complete and tested (98%+ coverage), but no astronomical detection/reduction logic has been added yet. If you're forking this as a base for a new project, everything here is meant to be kept; domain-specific logic goes on top.
+
+## License
+
+BSD 3-Clause — see [LICENSE](LICENSE).

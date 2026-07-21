@@ -33,6 +33,8 @@ Claude may only suggest packages or write code that aligns with this strict base
     *   `genTests on [filename.md]` → `gen_tests.md`: Interactive CLI + Application QA session. Runs one step at a time, waits for user confirmation, diagnoses failures. Only exits when all steps pass. Must be completed before `genPR`.
     *   `genPR on [filename.md]` → `gen_pr.md`: Generates commit message, PR title, and PR body from git context + the architectural doc. Assumes `genTests` has been completed — generates with pre-checked boxes and verified outcomes.
     *   `stratSesh on [filename.md]` → `strat_sesh.md`: Structured briefing on structural changes, data flow changes, and code review highlights for a completed doc. Interactive drill-down — user chooses what to explore further.
+    *   `logIssue <description>` → `log_issue.md`: Files a GitHub Issue (tech-debt/enhancement/bug) directly — no branch, commit, or PR. This is now the sole tech-debt tracking mechanism, including debt discovered mid-implementation on an active branch — `docs/tech_debt.md` was retired in favor of GitHub Issues labeled `tech-debt`.
+
 
 
 ##### Operational Gotchas & Checklists
@@ -55,7 +57,7 @@ Claude may only suggest packages or write code that aligns with this strict base
 ### Directory References
 *   **Product Requirements:** Refer to `docs/prd.md` for overarching workflows.
 *   **Architecture & Design:** Refer to numbered files in `docs/architecture/` (e.g., `01_...`) for stage-by-stage design and prompting.
-*   **Technical Debt:** Refer to `docs/tech_debt.md` for tracked workarounds, dependency pins, and known limitations to revisit later.
+*   **Technical Debt:** Tracked as GitHub Issues labeled `tech-debt` — workarounds, dependency pins, and known limitations to revisit later. File new items via the `logIssue` skill rather than a markdown file.
 *   **Claude Skills:** Refer to `.claude/skills/` (or `.claude/rules/`) for repeatable execution scripts.
 
 ### Clarifications & Logs
