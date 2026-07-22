@@ -10,8 +10,8 @@ RUN uv sync --frozen --no-install-project --no-group test
 
 # Layer 2: copy source then install the project so hatchling can build it
 #           correctly and register the diffpype-manage entry-point script.
-COPY alembic.ini ./
-COPY migrations/ ./migrations/
+# Note: no alembic.ini/migrations/ here — the worker never runs alembic;
+# only the api container does (docker compose exec api alembic upgrade head).
 COPY src ./src
 RUN uv sync --frozen --no-group test
 

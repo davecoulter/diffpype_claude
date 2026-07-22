@@ -8,6 +8,8 @@ Read `docs/architecture/[filename.md]`. Do NOT write any implementation code. Ru
 
 For each failing item, produce: (a) a plain-language description of what is missing, and (b) a revision prompt the user can paste into Gemini. Revision prompts must convey the *what* and *why* of the required change clearly enough that Gemini can implement it without ambiguity — but must not ghostwrite the solution. State the problem, the location, and the recommended direction; leave the prose to Gemini. Do not dictate exact sentences or replacement text. If a choice must be made, flag it as **Decision Required** for the user before formulating the prompt.
 
+**Deterministic fixes exception:** If a failing item has no open design judgment — the exact field, value, constraint, or test requirement is already fully specified and there's nothing left for Gemini to interpret — propose the literal edit inline and ask for confirmation before applying it directly to the architecture doc with the Edit tool, skipping the Gemini round-trip. Only route a finding through Gemini when real architectural/design judgment is still required.
+
 ---
 
 **§A — Scope & Decomposition**
@@ -53,5 +55,5 @@ For each failing item, produce: (a) a plain-language description of what is miss
 2. **"What fixed cleanly" bullet list** — on re-assessment passes, briefly note which prior failing items are now resolved, before detailing anything still open.
 3. **Failing items, each under its own subheading** — what's missing + a plain-language explanation. Use a comparison table instead of prose wherever a side-by-side (e.g. option A vs. option B, old behavior vs. new) would be clearer. If a failing item represents a genuine design decision (not a gap with an obvious fill), flag it as **Decision Required**, present the options with a recommendation and rationale, and wait for the user to confirm before including it in the Gemini prompt block.
 4. **Decomposition recommendation** — only if §A fails.
-5. **Consolidated Gemini revision prompt** — a single copyable fenced code block combining all confirmed revision instructions. Label it clearly so the user can paste it directly. Only include items where the fix is confirmed (i.e., no open Decision Required items remain unresolved).
+5. **Consolidated Gemini revision prompt** — a single copyable fenced code block combining all confirmed revision instructions that still require Gemini's judgment. Purely mechanical fixes are applied directly instead (per the deterministic-fixes exception above) and listed under "Applied directly," not included here. Label it clearly so the user can paste it directly. Only include items where the fix is confirmed (i.e., no open Decision Required items remain unresolved).
 6. **Exit condition** — when all items pass or are explicitly N/A: *"This document is ready for `runPrompt`."*

@@ -17,20 +17,10 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:16
-        env:
-          POSTGRES_USER: diffpype_ci
-          POSTGRES_PASSWORD: diffpype_ci
-          POSTGRES_DB: diffpype_ci
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 5s
-          --health-timeout 5s
-          --health-retries 10
+    # NOTE: Postgres is built from docker/db.Dockerfile and run manually below
+    # rather than declared as a `services:` container, because the migrations in
+    # this repo require the Q3C spatial extension, which only exists in the
+    # project's custom db image — the stock postgres:16 image does not have it.
 
     env:
       DATABASE_URL: postgresql+psycopg2://diffpype_ci:diffpype_ci@localhost:5432/diffpype_ci
@@ -42,6 +32,32 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+
+      - name: Build Q3C-enabled Postgres image
+        run: docker build -f docker/db.Dockerfile -t diffpype-db:ci .
+
+      - name: Start Postgres
+        run: |
+          docker run -d --name diffpype-db \
+            -e POSTGRES_USER=diffpype_ci \
+            -e POSTGRES_PASSWORD=diffpype_ci \
+            -e POSTGRES_DB=diffpype_ci \
+            -p 5432:5432 \
+            diffpype-db:ci
+
+      - name: Wait for Postgres to accept connections
+        run: |
+          for i in $(seq 1 30); do
+            if docker exec diffpype-db pg_isready -U diffpype_ci -d diffpype_ci; then
+              echo "Postgres is ready"
+              exit 0
+            fi
+            echo "Waiting for Postgres... ($i)"
+            sleep 2
+          done
+          echo "Postgres did not become ready in time"
+          docker logs diffpype-db
+          exit 1
 
       - uses: actions/setup-python@v5
         with:

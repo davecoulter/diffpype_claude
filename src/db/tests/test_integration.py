@@ -7,11 +7,29 @@ These tests validate that:
   - The JobConfiguration table and its relationship to DummyImage round-trip correctly.
 """
 
+from datetime import datetime, timezone
+
+import pytest
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from src.db.enums import CeleryQueue, JobStatus
-from src.db.models import DummyImage, JobConfiguration, StepDefinition, User
+from src.db.models import (
+    Band,
+    DummyImage,
+    Epoch,
+    Instrument,
+    JobConfiguration,
+    Level2Calibration,
+    Level2Image,
+    Level3Mosaic,
+    Project,
+    StepDefinition,
+    Tile,
+    User,
+    tile_level2_calibration_association,
+)
 
 
 def test_job_status_enum_type_exists_in_db(db):
@@ -227,6 +245,12 @@ def test_sysadmin_seeding_links_step_definition_to_user(mocker, test_engine):
     # JobConfiguration rows referencing this user first: any code path that dispatches
     # a job as sysadmin (including manual CLI testing against this DB) can create one,
     # and it would otherwise block the User delete via fk_job_configurations_user_id.
+    # seed_step_definitions also commits reference Instruments/Bands — remove them too.
+    _cleanup_seeded_rows(TestSession)
+
+
+def _cleanup_seeded_rows(TestSession):
+    """Delete every row seed_step_definitions() commits outside the transactional fixture."""
     cleanup = TestSession()
     try:
         sysadmin_id = cleanup.query(User.id).filter_by(username="sysadmin").scalar()
@@ -234,6 +258,302 @@ def test_sysadmin_seeding_links_step_definition_to_user(mocker, test_engine):
             cleanup.query(JobConfiguration).filter_by(user_id=sysadmin_id).delete()
         cleanup.query(StepDefinition).filter_by(name="dummy_sleep").delete()
         cleanup.query(User).filter_by(username="sysadmin").delete()
+        cleanup.query(Instrument).filter(
+            Instrument.name.in_(["NIRCam", "MIRI"])
+        ).delete(synchronize_session=False)
+        cleanup.query(Band).filter(Band.name.in_(["F150W", "F277W"])).delete(
+            synchronize_session=False
+        )
         cleanup.commit()
     finally:
         cleanup.close()
+
+
+# --- Domain model tests (doc 26) ---
+#
+# Helpers build a valid FK graph inside the transactional `db` fixture. All
+# reference names carry a "-test" suffix so they never collide with the real
+# NIRCam/MIRI/F150W/F277W rows that seed_step_definitions() commits (per the
+# integration-test isolation rule in CLAUDE.md).
+
+
+def _utc(year: int, month: int, day: int) -> datetime:
+    return datetime(year, month, day, tzinfo=timezone.utc)
+
+
+def _make_ref(db, instr_name="NIRCam-test", band_name="F150W-test"):
+    instrument = Instrument(name=instr_name)
+    band = Band(name=band_name, central_lambda=1.501)
+    db.add_all([instrument, band])
+    db.flush()
+    return instrument, band
+
+
+def _make_tile(db, project, name="Tile-test", ra=150.12, decl=2.31):
+    tile = Tile(
+        name=name,
+        ra=ra,
+        decl=decl,
+        delta_ra=0.0417,
+        delta_decl=0.0417,
+        project_id=project.id,
+    )
+    db.add(tile)
+    db.flush()
+    return tile
+
+
+def _make_epoch(db, project, tile, band):
+    epoch = Epoch(
+        start_date=_utc(2024, 1, 1),
+        end_date=_utc(2024, 1, 5),
+        start_mjd=60310.0,
+        end_mjd=60314.0,
+        project_id=project.id,
+        tile_id=tile.id,
+        band_id=band.id,
+    )
+    db.add(epoch)
+    db.flush()
+    return epoch
+
+
+def _make_image(db, instrument, band, base_filename="jw001_cal.fits"):
+    img = Level2Image(
+        base_filename=base_filename,
+        ra=150.12,
+        decl=2.31,
+        exp_time=1000.0,
+        mjd_avg=60312.0,
+        target_name="TESTTARGET",
+        obs_start=_utc(2024, 1, 2),
+        instrument_id=instrument.id,
+        band_id=band.id,
+    )
+    db.add(img)
+    db.flush()
+    return img
+
+
+def _make_calibration(db, image):
+    cal = Level2Calibration(
+        level2_image_id=image.id,
+        current_file_ext=".fits",
+        plate_scale=0.031,
+    )
+    db.add(cal)
+    db.flush()
+    return cal
+
+
+def test_instrument_and_band_roundtrip(db):
+    """Reference tables persist and read back all fields correctly."""
+    instrument, band = _make_ref(db)
+    fetched_instr = db.get(Instrument, instrument.id)
+    fetched_band = db.get(Band, band.id)
+    assert fetched_instr.name == "NIRCam-test"
+    assert fetched_band.name == "F150W-test"
+    assert fetched_band.central_lambda == 1.501
+    assert fetched_instr.created_at is not None
+
+
+def test_instrument_name_is_unique(db):
+    """A duplicate Instrument name is rejected by the database."""
+    db.add(Instrument(name="DupInstr-test"))
+    db.flush()
+    with pytest.raises(IntegrityError):
+        with db.begin_nested():
+            db.add(Instrument(name="DupInstr-test"))
+            db.flush()
+
+
+def test_band_name_is_unique(db):
+    """A duplicate Band name is rejected by the database."""
+    db.add(Band(name="DupBand-test", central_lambda=1.0))
+    db.flush()
+    with pytest.raises(IntegrityError):
+        with db.begin_nested():
+            db.add(Band(name="DupBand-test", central_lambda=2.0))
+            db.flush()
+
+
+def test_seed_reference_data_is_idempotent(mocker, test_engine):
+    """Calling seed_step_definitions() twice must not raise or duplicate reference rows."""
+    from src.db.seed import seed_step_definitions
+
+    TestSession = sessionmaker(bind=test_engine)
+    mocker.patch("src.db.seed.SessionLocal", side_effect=TestSession)
+
+    seed_step_definitions()
+    seed_step_definitions()  # second run must be a clean no-op for reference data
+
+    db = TestSession()
+    try:
+        assert db.query(Instrument).filter_by(name="NIRCam").count() == 1
+        assert db.query(Instrument).filter_by(name="MIRI").count() == 1
+        assert db.query(Band).filter_by(name="F150W").count() == 1
+        assert db.query(Band).filter_by(name="F277W").count() == 1
+    finally:
+        db.close()
+
+    _cleanup_seeded_rows(TestSession)
+
+
+def test_tile_and_epoch_roundtrip_with_project_fk(db, user):
+    """Tile and Epoch persist and their foreign keys resolve back to the parent objects."""
+    project = Project(name="DomainTestProject", user_id=user.id)
+    db.add(project)
+    db.flush()
+    _instrument, band = _make_ref(db)
+    tile = _make_tile(db, project)
+    epoch = _make_epoch(db, project, tile, band)
+
+    fetched_tile = db.get(Tile, tile.id)
+    assert fetched_tile.coord_sys == 2000  # Python-side default applied
+    assert fetched_tile.project.id == project.id
+
+    fetched_epoch = db.get(Epoch, epoch.id)
+    assert fetched_epoch.project.id == project.id
+    assert fetched_epoch.tile.id == tile.id
+    assert fetched_epoch.band.id == band.id
+
+
+def test_q3c_extension_and_index_exist(db):
+    """The migration enabled the Q3C extension and built the tile spatial index."""
+    ext = db.execute(
+        text("SELECT 1 FROM pg_extension WHERE extname = 'q3c'")
+    ).fetchone()
+    assert ext is not None
+    idx = db.execute(
+        text("SELECT 1 FROM pg_indexes WHERE indexname = 'ix_tile_q3c'")
+    ).fetchone()
+    assert idx is not None
+
+
+def test_level2_image_and_calibration_one_to_one(db):
+    """Level2Calibration round-trips, defaults status to PENDING, and back-navigates to its image."""
+    instrument, band = _make_ref(db)
+    image = _make_image(db, instrument, band)
+    cal = _make_calibration(db, image)
+
+    fetched = db.get(Level2Calibration, cal.id)
+    assert fetched.status == JobStatus.PENDING  # Python-side default applied
+    assert fetched.plate_scale == 0.031
+    assert fetched.level2_image.base_filename == "jw001_cal.fits"
+    # One-to-one back reference from the immutable image to its calibration.
+    assert db.get(Level2Image, image.id).calibration.id == cal.id
+
+
+def test_level2_image_calibration_is_one_per_image(db):
+    """The unique constraint on level2_image_id forbids a second calibration for one image."""
+    instrument, band = _make_ref(db)
+    image = _make_image(db, instrument, band)
+    _make_calibration(db, image)
+    with pytest.raises(IntegrityError):
+        with db.begin_nested():
+            db.add(
+                Level2Calibration(
+                    level2_image_id=image.id,
+                    current_file_ext=".fits",
+                    plate_scale=0.062,
+                )
+            )
+            db.flush()
+
+
+def test_calibration_associates_with_many_tiles_and_epochs(db, user):
+    """A single Level2Calibration can belong to multiple Tiles and Epochs via the junction tables."""
+    project = Project(name="DomainTestProject", user_id=user.id)
+    db.add(project)
+    db.flush()
+    instrument, band = _make_ref(db)
+    tile_a = _make_tile(db, project, name="Tile-A")
+    tile_b = _make_tile(db, project, name="Tile-B")
+    epoch_a = _make_epoch(db, project, tile_a, band)
+    epoch_b = _make_epoch(db, project, tile_b, band)
+    cal = _make_calibration(db, _make_image(db, instrument, band))
+
+    cal.tiles.extend([tile_a, tile_b])
+    cal.epochs.extend([epoch_a, epoch_b])
+    db.flush()
+
+    fetched = db.get(Level2Calibration, cal.id)
+    assert {t.id for t in fetched.tiles} == {tile_a.id, tile_b.id}
+    assert {e.id for e in fetched.epochs} == {epoch_a.id, epoch_b.id}
+    junction_count = db.execute(
+        text(
+            "SELECT count(*) FROM tile_level2_calibration_association "
+            "WHERE level2_calibration_id = :cid"
+        ),
+        {"cid": cal.id},
+    ).scalar()
+    assert junction_count == 2
+
+
+def test_duplicate_tile_association_is_rejected(db, user):
+    """The association composite primary key rejects a duplicate tile/calibration pairing."""
+    project = Project(name="DomainTestProject", user_id=user.id)
+    db.add(project)
+    db.flush()
+    instrument, band = _make_ref(db)
+    tile = _make_tile(db, project)
+    cal = _make_calibration(db, _make_image(db, instrument, band))
+
+    db.execute(
+        tile_level2_calibration_association.insert().values(
+            tile_id=tile.id, level2_calibration_id=cal.id
+        )
+    )
+    db.flush()
+    with pytest.raises(IntegrityError):
+        with db.begin_nested():
+            db.execute(
+                tile_level2_calibration_association.insert().values(
+                    tile_id=tile.id, level2_calibration_id=cal.id
+                )
+            )
+            db.flush()
+
+
+def test_level3_mosaic_roundtrip_and_identity_uniqueness(db, user):
+    """Level3Mosaic round-trips, and a second mosaic with the same identity tuple is rejected."""
+    project = Project(name="DomainTestProject", user_id=user.id)
+    db.add(project)
+    db.flush()
+    instrument, band = _make_ref(db)
+    tile = _make_tile(db, project)
+    epoch = _make_epoch(db, project, tile, band)
+
+    mosaic = Level3Mosaic(
+        filename="mosaic_1.fits",
+        target_plate_scale=0.031,
+        instrument_id=instrument.id,
+        band_id=band.id,
+        epoch_id=epoch.id,
+        tile_id=tile.id,
+        project_id=project.id,
+    )
+    db.add(mosaic)
+    db.flush()
+
+    fetched = db.get(Level3Mosaic, mosaic.id)
+    assert fetched.status == JobStatus.PENDING  # Python-side default applied
+    assert fetched.tile.id == tile.id
+    assert fetched.epoch.id == epoch.id
+    assert fetched.job_configuration_id is None
+
+    # Same (instrument, tile, epoch, band, project) tuple -> duplicate rejected.
+    with pytest.raises(IntegrityError):
+        with db.begin_nested():
+            db.add(
+                Level3Mosaic(
+                    filename="mosaic_2.fits",
+                    target_plate_scale=0.062,
+                    instrument_id=instrument.id,
+                    band_id=band.id,
+                    epoch_id=epoch.id,
+                    tile_id=tile.id,
+                    project_id=project.id,
+                )
+            )
+            db.flush()
