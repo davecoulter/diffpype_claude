@@ -13,7 +13,7 @@ flowchart TB
         subgraph db_c["db (Postgres)"]
             direction LR
             db_spacer_l[" "]:::spacer
-            db[("Postgres<br/>+ Q3C / HealpixAlchemy")]:::repo
+            db[("Postgres<br/>+ Q3C / HEALPix ranges")]:::repo
             db_spacer_r[" "]:::spacer
             db_spacer_l ~~~ db
             db ~~~ db_spacer_r
@@ -21,6 +21,10 @@ flowchart TB
 
         subgraph redis_c["redis"]
             redis[("Redis")]:::repo
+        end
+
+        subgraph minio_c["minio (S3 mock)"]
+            minio_node[("MinIO<br/>S3 object store")]:::repo
         end
 
         subgraph api_c["api (FastAPI)"]
@@ -103,6 +107,11 @@ flowchart TB
     jaeger_node -.-> worker_c
     dbeaver -.-> db_c
 
+    %% Storage data flow + management (declared last to preserve existing link indices)
+    api_service -->|store/fetch FITS| minio_node
+    w_tasks -->|store/fetch FITS| minio_node
+    portainer_node -.-> minio_c
+
     classDef apiLayer fill:#3B6EA5,stroke:#1F4066,color:#fff
     classDef workerLayer fill:#C97A3D,stroke:#8A4F24,color:#fff
     classDef repo fill:#4C8C6B,stroke:#2E5842,color:#fff
@@ -114,7 +123,7 @@ flowchart TB
     classDef spacer fill:transparent,stroke:transparent,color:transparent
     classDef networkBg fill:transparent,stroke:#5A6C77,color:#fff
 
-    class db_c,redis_c,api_c,worker_c,ui_c,jaeger_c,flower_c,portainer_c containerBg
+    class db_c,redis_c,minio_c,api_c,worker_c,ui_c,jaeger_c,flower_c,portainer_c containerBg
     class network networkBg
 
     %% Tier 1 (default): solid amber — configured application data flow between components
@@ -122,7 +131,7 @@ flowchart TB
     %% Invisible spacer links used only to center nodes within db_c, worker_c, portainer_c — must override the amber default or they render as dangling solid lines
     linkStyle 0,1,11,17,18 stroke:none,stroke-width:0
     %% Tier 3: dashed cool steel gray — Portainer manages containers at the Docker daemon level, independent of what's running inside them
-    linkStyle 25,26,27,28,29,30,31 stroke:#8F97A0,stroke-width:4px
+    linkStyle 25,26,27,28,29,30,31,38 stroke:#8F97A0,stroke-width:4px
     %% Tier 2: dashed rose — Jaeger/Flower/DBeaver observe a specific process's exposed port/protocol (OTLP, Celery/Redis state, Postgres wire protocol)
     linkStyle 32,33,34,35 stroke:#C0546A,stroke-width:4px
 ```
@@ -155,6 +164,7 @@ flowchart TB
 |---|---|
 | `db` | Persists all application state — the single source of truth |
 | `redis` | Celery broker + result backend, queues work between dispatchers and workers |
+| `minio` | Local S3-compatible object store (mock) for FITS payloads; the api and workers read/write files here via `S3StorageService` |
 | `api` | Serves the HTTP API, admin panel, and CLI; validates input and dispatches work |
 | `worker` (×2: `worker_light`, `worker_heavy`) | Same image/codebase, deployed as two instances with different queue subscriptions and resource limits — `light` for fast I/O-bound tasks, `heavy_memory` for memory/compute-intensive ones |
 | `ui` | Frontend for dispatching jobs and viewing status |

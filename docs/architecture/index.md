@@ -33,4 +33,5 @@ work for that stage.
 24_devops_tooling
 25_documentation_diagrams
 26_domain_models
+27_schema_storage_spatial_types
 ```

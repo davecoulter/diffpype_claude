@@ -6,7 +6,7 @@ When the user invokes this command, you must internally expand it into the follo
 
 "Please review `docs/architecture/[filename.md]`.
 
-Following your Model Evaluation Phase rule, analyze the complexity of this request and output your model recommendation and rationale. Then **STOP COMPLETELY** — do not read any files, write any code, or take any other action. Wait for explicit human authorization (e.g. "proceed", "engage") before continuing. This pause is mandatory even when the model choice is obvious.
+Following your Model Evaluation Phase rule, analyze the complexity of this request and output your model recommendation, an effort-level recommendation (low/medium/high/xhigh/max), and rationale for both. Then **STOP COMPLETELY** — do not read any files, write any code, or take any other action. Wait for explicit human authorization (e.g. "proceed", "engage") before continuing. This pause is mandatory even when the model or effort choice is obvious.
 
 Once authorized:
 * **Branch first:** Confirm the feature branch already exists (run `git branch --show-current`). The branch should have been created before the arch doc was written, because the arch doc file itself is a tracked change. If we are still on `main`, stop and ask the user to run `git checkout -b feature/[short-slug]` before writing any code.

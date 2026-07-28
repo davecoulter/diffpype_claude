@@ -3,9 +3,11 @@
 from datetime import datetime
 
 import sqlalchemy as sa
+from mocpy import MOC
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from src.db.enums import CeleryQueue, JobStatus
+from src.db.spatial_types import MOCType
 
 
 # Declared explicitly (rather than relying on DeclarativeBase's implicit default)
@@ -199,7 +201,10 @@ class Tile(TimestampMixin, Base):
     """User-defined sky square (tangent plane) that calibrated Level 2 images are associated with spatially."""
 
     __tablename__ = "tiles"
-    __table_args__ = (sa.Index("ix_tile_q3c", sa.text("q3c_ang2ipix(ra, decl)")),)
+    __table_args__ = (
+        sa.Index("ix_tile_q3c", sa.text("q3c_ang2ipix(ra, decl)")),
+        sa.Index("ix_tile_footprint_gist", "footprint", postgresql_using="gist"),
+    )
 
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     name: Mapped[str] = mapped_column(sa.String, nullable=False)
@@ -207,7 +212,7 @@ class Tile(TimestampMixin, Base):
     decl: Mapped[float] = mapped_column(sa.Float, nullable=False)
     delta_ra: Mapped[float] = mapped_column(sa.Float, nullable=False)
     delta_decl: Mapped[float] = mapped_column(sa.Float, nullable=False)
-    moc_str: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    footprint: Mapped["MOC | None"] = mapped_column(MOCType, nullable=True)
     healpix_index: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
     coord_sys: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=2000)
     project_id: Mapped[int] = mapped_column(
@@ -257,7 +262,7 @@ class Level2Image(TimestampMixin, Base):
     )
 
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
-    base_filename: Mapped[str] = mapped_column(sa.String, nullable=False)
+    base_filename: Mapped[str] = mapped_column(sa.String, unique=True, nullable=False)
     ra: Mapped[float] = mapped_column(sa.Float, nullable=False)
     decl: Mapped[float] = mapped_column(sa.Float, nullable=False)
     exp_time: Mapped[float] = mapped_column(sa.Float, nullable=False)
@@ -273,8 +278,8 @@ class Level2Image(TimestampMixin, Base):
 
     instrument: Mapped["Instrument"] = relationship()
     band: Mapped["Band"] = relationship()
-    calibration: Mapped["Level2Calibration | None"] = relationship(
-        back_populates="level2_image", uselist=False
+    calibrations: Mapped[list["Level2Calibration"]] = relationship(
+        back_populates="level2_image"
     )
 
 
@@ -282,12 +287,27 @@ class Level2Calibration(TimestampMixin, Base):
     """Our application's derived, processed reference to a Level2Image, carrying its footprint and pipeline status."""
 
     __tablename__ = "level2_calibrations"
+    __table_args__ = (
+        sa.UniqueConstraint(
+            "level2_image_id",
+            "project_id",
+            name="uq_level2_calibration_image_project",
+        ),
+        sa.Index(
+            "ix_level2_calibration_footprint_gist",
+            "footprint",
+            postgresql_using="gist",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     level2_image_id: Mapped[int] = mapped_column(
-        sa.ForeignKey("level2_images.id"), unique=True, nullable=False
+        sa.ForeignKey("level2_images.id"), nullable=False
     )
-    moc_str: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    project_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("projects.id"), nullable=False
+    )
+    footprint: Mapped["MOC | None"] = mapped_column(MOCType, nullable=True)
     current_file_ext: Mapped[str] = mapped_column(sa.String, nullable=False)
     plate_scale: Mapped[float] = mapped_column(sa.Float, nullable=False)
     status: Mapped[JobStatus] = mapped_column(
@@ -301,7 +321,8 @@ class Level2Calibration(TimestampMixin, Base):
         default=JobStatus.PENDING,
     )
 
-    level2_image: Mapped["Level2Image"] = relationship(back_populates="calibration")
+    level2_image: Mapped["Level2Image"] = relationship(back_populates="calibrations")
+    project: Mapped["Project"] = relationship()
     tiles: Mapped[list["Tile"]] = relationship(
         secondary=tile_level2_calibration_association,
         back_populates="level2_calibrations",
@@ -325,12 +346,17 @@ class Level3Mosaic(TimestampMixin, Base):
             "project_id",
             name="uq_level3_mosaic_identity",
         ),
+        sa.Index(
+            "ix_level3_mosaic_footprint_gist",
+            "footprint",
+            postgresql_using="gist",
+        ),
     )
 
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     filename: Mapped[str] = mapped_column(sa.String, nullable=False)
     target_plate_scale: Mapped[float] = mapped_column(sa.Float, nullable=False)
-    moc_str: Mapped[str | None] = mapped_column(sa.Text, nullable=True)
+    footprint: Mapped["MOC | None"] = mapped_column(MOCType, nullable=True)
     instrument_id: Mapped[int] = mapped_column(
         sa.ForeignKey("instruments.id"), nullable=False
     )
