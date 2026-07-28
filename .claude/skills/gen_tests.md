@@ -35,6 +35,7 @@ Derive the exact commands from context:
   never do this automatically as part of a QA step.
 - `docker compose exec api uv run pytest --cov=src --cov-fail-under=90 -q`
 - Sphinx locally: `DATABASE_URL="postgresql+psycopg2://dummy:dummy@localhost/dummy" REDIS_URL="redis://localhost:6379/0" uv run sphinx-build -b html docs docs/_build/html -W`
+- Pre-commit locally: `uv run pre-commit run --all-files`. Before running this, check `git status --short` for `??` (untracked) entries. If any exist, stop and ask the user to commit them first — never stage or commit on their behalf. Pre-commit's `--all-files` only checks git-tracked files (confirmed empirically during doc 28's `genTests`), so running it against an untracked file gives a false "Passed" that doesn't reflect what will actually be pushed. Re-check any time a `genTests`-driven bug fix creates a new file — it needs to be committed again before the next pre-commit run means anything.
 
 Wait for the user to confirm all CLI steps pass before proceeding to Phase 2.
 If any CLI step fails: diagnose, fix, and ask the user to re-run that step before continuing.
