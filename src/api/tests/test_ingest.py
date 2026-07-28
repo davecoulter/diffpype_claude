@@ -63,9 +63,7 @@ def test_get_ingest_batch_status_returns_batch(client, mock_db, mocker):
 
 
 def test_get_ingest_batch_status_404_when_missing(client, mock_db, mocker):
-    mocker.patch(
-        "src.services.ingest_service.get_ingest_batch", return_value=None
-    )
+    mocker.patch("src.services.ingest_service.get_ingest_batch", return_value=None)
 
     response = client.get("/api/v1/ingest/999")
 

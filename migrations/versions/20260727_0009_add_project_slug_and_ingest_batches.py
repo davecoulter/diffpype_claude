@@ -70,9 +70,7 @@ def upgrade() -> None:
     for row in existing_rows:
         slug = _unique_slug(slugify(row.name), taken_slugs)
         taken_slugs.add(slug)
-        bind.execute(
-            projects.update().where(projects.c.id == row.id).values(slug=slug)
-        )
+        bind.execute(projects.update().where(projects.c.id == row.id).values(slug=slug))
 
     op.alter_column("projects", "slug", nullable=False)
     op.create_unique_constraint("uq_project_slug", "projects", ["slug"])

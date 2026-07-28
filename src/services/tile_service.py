@@ -100,7 +100,9 @@ def generate_tile_tessellation(
     covered_area = moc_to_tile.sky_fraction * 41252.96
     bary = moc_to_tile.barycenter()
     fov_degrees = 2 * np.sqrt(covered_area)
-    nearby_coords = all_sky_coords[all_sky_coords.separation(bary).degree <= fov_degrees]
+    nearby_coords = all_sky_coords[
+        all_sky_coords.separation(bary).degree <= fov_degrees
+    ]
 
     x_step = orig_deg_width / 2.0
     y_step = orig_deg_height / 2.0
@@ -158,9 +160,7 @@ def create_tiles(db: Session, project_id: int, tiles: list[dict]) -> list[Tile]:
         return []
 
     rows = [{**tile, "project_id": project_id} for tile in tiles]
-    created = (
-        db.execute(sa.insert(Tile).returning(Tile), rows).scalars().all()
-    )
+    created = db.execute(sa.insert(Tile).returning(Tile), rows).scalars().all()
     db.flush()
 
     _associate_tiles_with_overlapping_calibrations(db, project_id, created)
@@ -192,9 +192,7 @@ def _associate_tiles_with_overlapping_calibrations(
         db.execute(
             pg_insert(tile_level2_calibration_association)
             .values(association_rows)
-            .on_conflict_do_nothing(
-                index_elements=["tile_id", "level2_calibration_id"]
-            )
+            .on_conflict_do_nothing(index_elements=["tile_id", "level2_calibration_id"])
         )
 
 

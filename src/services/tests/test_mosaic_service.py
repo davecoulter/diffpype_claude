@@ -15,8 +15,12 @@ from src.services.mosaic_service import (
 
 def test_unioned_footprint_and_barycenter_unions_and_extracts_center():
     """Real, in-memory MOC math: two adjacent cones union into one footprint with a center between them."""
-    moc_a = MOC.from_cone(lon=10 * u.deg, lat=0 * u.deg, radius=0.2 * u.deg, max_depth=12)
-    moc_b = MOC.from_cone(lon=10.3 * u.deg, lat=0 * u.deg, radius=0.2 * u.deg, max_depth=12)
+    moc_a = MOC.from_cone(
+        lon=10 * u.deg, lat=0 * u.deg, radius=0.2 * u.deg, max_depth=12
+    )
+    moc_b = MOC.from_cone(
+        lon=10.3 * u.deg, lat=0 * u.deg, radius=0.2 * u.deg, max_depth=12
+    )
 
     union, ra, decl = _unioned_footprint_and_barycenter([moc_a, moc_b])
 
@@ -27,7 +31,9 @@ def test_unioned_footprint_and_barycenter_unions_and_extracts_center():
 
 
 def test_unioned_footprint_and_barycenter_single_moc_is_a_no_op_union():
-    moc = MOC.from_cone(lon=50 * u.deg, lat=20 * u.deg, radius=0.1 * u.deg, max_depth=10)
+    moc = MOC.from_cone(
+        lon=50 * u.deg, lat=20 * u.deg, radius=0.1 * u.deg, max_depth=10
+    )
 
     union, ra, decl = _unioned_footprint_and_barycenter([moc])
 
@@ -64,8 +70,12 @@ def test_create_mosaic_dispatches_and_returns_ids(mocker):
     mock_delay.assert_called_once_with(42)
 
 
-def test_create_mosaic_computes_footprint_and_barycenter_when_calibrations_exist(mocker):
-    moc_a = MOC.from_cone(lon=10 * u.deg, lat=20 * u.deg, radius=0.05 * u.deg, max_depth=12)
+def test_create_mosaic_computes_footprint_and_barycenter_when_calibrations_exist(
+    mocker,
+):
+    moc_a = MOC.from_cone(
+        lon=10 * u.deg, lat=20 * u.deg, radius=0.05 * u.deg, max_depth=12
+    )
     mock_db = MagicMock()
     mock_db.execute.return_value.all.return_value = [(moc_a,)]
     mock_db.refresh.side_effect = lambda obj: setattr(obj, "id", 7)

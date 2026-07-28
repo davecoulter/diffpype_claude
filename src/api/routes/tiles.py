@@ -1,7 +1,12 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from src.api.schemas import TileBulkCreateRequest, TileCreate, TileRead, TileTessellationRequest
+from src.api.schemas import (
+    TileBulkCreateRequest,
+    TileCreate,
+    TileRead,
+    TileTessellationRequest,
+)
 from src.db.session import get_db
 from src.db.spatial_types import moc_to_ranges, ranges_to_moc
 from src.services import tile_service

@@ -90,8 +90,7 @@ def _resolve_reference_ids(db: Session, df: pd.DataFrame) -> pd.DataFrame:
     missing = df[df["instrument_id"].isna() | df["band_id"].isna()]
     if not missing.empty:
         raise ValueError(
-            "Unknown instrument/band for files: "
-            f"{missing['base_filename'].tolist()}"
+            "Unknown instrument/band for files: " f"{missing['base_filename'].tolist()}"
         )
 
     df["instrument_id"] = df["instrument_id"].astype(int)
@@ -156,15 +155,15 @@ def bulk_upsert_images_and_calibrations(
     db.execute(
         pg_insert(Level2Calibration)
         .values(calibration_rows)
-        .on_conflict_do_nothing(
-            index_elements=["level2_image_id", "project_id"]
-        )
+        .on_conflict_do_nothing(index_elements=["level2_image_id", "project_id"])
     )
     db.commit()
     return len(df)
 
 
-def create_ingest_batch(db: Session, project_id: int, s3_prefix: str) -> tuple[str, int]:
+def create_ingest_batch(
+    db: Session, project_id: int, s3_prefix: str
+) -> tuple[str, int]:
     """Persist a PENDING IngestBatch, dispatch the ingest Celery task, return (job_id, batch_id)."""
     from src.worker.tasks import run_ingest_batch  # lazy: avoids a circular import
 
@@ -178,7 +177,9 @@ def create_ingest_batch(db: Session, project_id: int, s3_prefix: str) -> tuple[s
     try:
         async_result = run_ingest_batch.delay(batch.id)
     except Exception:
-        get_logger().error("ingest_batch_dispatch_failed", batch_id=batch.id, exc_info=True)
+        get_logger().error(
+            "ingest_batch_dispatch_failed", batch_id=batch.id, exc_info=True
+        )
         batch.status = JobStatus.FAILED
         db.commit()
         raise

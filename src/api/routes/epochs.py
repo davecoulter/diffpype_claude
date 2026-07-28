@@ -1,7 +1,12 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from src.api.schemas import EpochBulkCreateRequest, EpochClusterRequest, EpochCreate, EpochRead
+from src.api.schemas import (
+    EpochBulkCreateRequest,
+    EpochClusterRequest,
+    EpochCreate,
+    EpochRead,
+)
 from src.db.session import get_db
 from src.services import epoch_service
 

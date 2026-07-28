@@ -26,9 +26,7 @@ def create_mosaic(
 
 
 @router.get("/{mosaic_id}", response_model=MosaicStatus)
-def get_mosaic_status(
-    mosaic_id: int, db: Session = Depends(get_db)
-) -> MosaicStatus:
+def get_mosaic_status(mosaic_id: int, db: Session = Depends(get_db)) -> MosaicStatus:
     mosaic = mosaic_service.get_mosaic(db, mosaic_id)
     if mosaic is None:
         raise HTTPException(status_code=404, detail="Level3Mosaic not found")

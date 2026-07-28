@@ -1,7 +1,6 @@
 from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
 
 from src.services.epoch_service import _cluster_mjds, cluster_epochs, create_epochs
 

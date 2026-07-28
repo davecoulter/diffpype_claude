@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
 import pandas as pd
@@ -116,7 +116,13 @@ def test_resolve_reference_ids_raises_on_unknown_instrument():
     mock_db.query.return_value.all.side_effect = [[], []]
 
     df = pd.DataFrame(
-        [{"base_filename": "a.fits", "instrument_name": "Unknown", "band_name": "F150W"}]
+        [
+            {
+                "base_filename": "a.fits",
+                "instrument_name": "Unknown",
+                "band_name": "F150W",
+            }
+        ]
     )
 
     with pytest.raises(ValueError, match="Unknown instrument/band"):

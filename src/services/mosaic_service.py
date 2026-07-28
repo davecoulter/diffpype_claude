@@ -118,9 +118,7 @@ def create_mosaic(
         db.commit()
         raise
 
-    get_logger().info(
-        "mosaic_dispatched", mosaic_id=mosaic.id, job_id=async_result.id
-    )
+    get_logger().info("mosaic_dispatched", mosaic_id=mosaic.id, job_id=async_result.id)
     return async_result.id, mosaic.id
 
 

@@ -9,9 +9,7 @@ router = APIRouter(prefix="/projects", tags=["projects"])
 
 
 @router.post("", response_model=ProjectRead)
-def create_project(
-    body: ProjectCreate, db: Session = Depends(get_db)
-) -> ProjectRead:
+def create_project(body: ProjectCreate, db: Session = Depends(get_db)) -> ProjectRead:
     try:
         project = project_service.create_project(
             db, body.name, body.description, body.user_id
