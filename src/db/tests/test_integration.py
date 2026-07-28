@@ -8,10 +8,13 @@ These tests validate that:
 """
 
 from datetime import datetime, timezone
+from unittest.mock import MagicMock
 
 import astropy.units as u
+import pandas as pd
 import pytest
 from mocpy import MOC
+from slugify import slugify
 from sqlalchemy import literal, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
@@ -31,6 +34,7 @@ from src.db.models import (
     StepDefinition,
     Tile,
     User,
+    epoch_level2_calibration_association,
     tile_level2_calibration_association,
 )
 
@@ -351,7 +355,7 @@ def _make_calibration(db, image, project, plate_scale=0.031):
 
 
 def _make_project(db, user, name="DomainTestProject"):
-    project = Project(name=name, user_id=user.id)
+    project = Project(name=name, slug=slugify(name), user_id=user.id)
     db.add(project)
     db.flush()
     return project
@@ -388,6 +392,16 @@ def test_band_name_is_unique(db):
             db.flush()
 
 
+def test_project_slug_is_unique(db, user):
+    """A duplicate Project slug is rejected by the database."""
+    db.add(Project(name="Same Name", slug="same-name", user_id=user.id))
+    db.flush()
+    with pytest.raises(IntegrityError):
+        with db.begin_nested():
+            db.add(Project(name="Same Name Again", slug="same-name", user_id=user.id))
+            db.flush()
+
+
 def test_seed_reference_data_is_idempotent(mocker, test_engine):
     """Calling seed_step_definitions() twice must not raise or duplicate reference rows."""
     from src.db.seed import seed_step_definitions
@@ -412,9 +426,7 @@ def test_seed_reference_data_is_idempotent(mocker, test_engine):
 
 def test_tile_and_epoch_roundtrip_with_project_fk(db, user):
     """Tile and Epoch persist and their foreign keys resolve back to the parent objects."""
-    project = Project(name="DomainTestProject", user_id=user.id)
-    db.add(project)
-    db.flush()
+    project = _make_project(db, user)
     _instrument, band = _make_ref(db)
     tile = _make_tile(db, project)
     epoch = _make_epoch(db, project, tile, band)
@@ -611,9 +623,7 @@ def test_footprint_overlap_query_returns_only_spatial_matches(db, user):
 
 def test_calibration_associates_with_many_tiles_and_epochs(db, user):
     """A single Level2Calibration can belong to multiple Tiles and Epochs via the junction tables."""
-    project = Project(name="DomainTestProject", user_id=user.id)
-    db.add(project)
-    db.flush()
+    project = _make_project(db, user)
     instrument, band = _make_ref(db)
     tile_a = _make_tile(db, project, name="Tile-A")
     tile_b = _make_tile(db, project, name="Tile-B")
@@ -640,9 +650,7 @@ def test_calibration_associates_with_many_tiles_and_epochs(db, user):
 
 def test_duplicate_tile_association_is_rejected(db, user):
     """The association composite primary key rejects a duplicate tile/calibration pairing."""
-    project = Project(name="DomainTestProject", user_id=user.id)
-    db.add(project)
-    db.flush()
+    project = _make_project(db, user)
     instrument, band = _make_ref(db)
     tile = _make_tile(db, project)
     cal = _make_calibration(db, _make_image(db, instrument, band), project)
@@ -665,9 +673,7 @@ def test_duplicate_tile_association_is_rejected(db, user):
 
 def test_level3_mosaic_roundtrip_and_identity_uniqueness(db, user):
     """Level3Mosaic round-trips, and a second mosaic with the same identity tuple is rejected."""
-    project = Project(name="DomainTestProject", user_id=user.id)
-    db.add(project)
-    db.flush()
+    project = _make_project(db, user)
     instrument, band = _make_ref(db)
     tile = _make_tile(db, project)
     epoch = _make_epoch(db, project, tile, band)
@@ -705,3 +711,557 @@ def test_level3_mosaic_roundtrip_and_identity_uniqueness(db, user):
                 )
             )
             db.flush()
+
+
+def test_create_tiles_persists_and_associates_overlapping_calibrations(test_engine):
+    """create_tiles bulk-inserts Tile rows and links only spatially-overlapping calibrations.
+
+    Runs on its own session for the same reason as the ingest bulk-upsert test:
+    create_tiles calls db.commit() internally.
+    """
+    from src.services.tile_service import create_tiles
+
+    TestSession = sessionmaker(bind=test_engine)
+    db = TestSession()
+    try:
+        user = User(
+            username="tileserviceowner",
+            email="tileserviceowner@diffpype.local",
+            is_active=True,
+            hashed_password="dummy_hash_for_testing",
+        )
+        db.add(user)
+        db.flush()
+        project = Project(
+            name="TileServiceProject", slug="tile-service-project", user_id=user.id
+        )
+        db.add(project)
+        instrument = Instrument(name="NIRCam-tilesvc")
+        band = Band(name="F150W-tilesvc", central_lambda=1.501)
+        db.add_all([instrument, band])
+        db.flush()
+
+        def _make_cal(base_filename, ra, decl):
+            image = Level2Image(
+                base_filename=base_filename,
+                ra=ra,
+                decl=decl,
+                exp_time=1.0,
+                target_name="TILESVC-TARGET",
+                obs_start=_utc(2024, 1, 1),
+                instrument_id=instrument.id,
+                band_id=band.id,
+            )
+            db.add(image)
+            db.flush()
+            cal = Level2Calibration(
+                level2_image_id=image.id,
+                project_id=project.id,
+                current_file_ext=".fits",
+                plate_scale=0.03,
+                footprint=MOC.from_cone(
+                    lon=ra * u.deg, lat=decl * u.deg, radius=0.05 * u.deg, max_depth=12
+                ),
+            )
+            db.add(cal)
+            db.flush()
+            return cal
+
+        near_cal = _make_cal("tile_svc_near.fits", 10.0, 20.0)
+        _make_cal("tile_svc_far.fits", 200.0, -40.0)  # must NOT be associated
+        db.commit()
+
+        tile_footprint = MOC.from_cone(
+            lon=10 * u.deg, lat=20 * u.deg, radius=0.1 * u.deg, max_depth=10
+        )
+        created = create_tiles(
+            db,
+            project.id,
+            [
+                {
+                    "name": "AssocTile",
+                    "ra": 10.0,
+                    "decl": 20.0,
+                    "delta_ra": 0.2,
+                    "delta_decl": 0.2,
+                    "footprint": tile_footprint,
+                }
+            ],
+        )
+
+        assert len(created) == 1
+        tile = created[0]
+        assert tile.id is not None
+        assoc_ids = {
+            row.level2_calibration_id
+            for row in db.execute(
+                text(
+                    "SELECT level2_calibration_id FROM tile_level2_calibration_association "
+                    "WHERE tile_id = :tid"
+                ),
+                {"tid": tile.id},
+            ).all()
+        }
+        assert assoc_ids == {near_cal.id}
+    finally:
+        db.execute(
+            text(
+                "DELETE FROM tile_level2_calibration_association "
+                "WHERE tile_id IN (SELECT id FROM tiles WHERE project_id IN "
+                "(SELECT id FROM projects WHERE slug = 'tile-service-project'))"
+            )
+        )
+        db.query(Tile).filter(
+            Tile.project_id.in_(
+                db.query(Project.id).filter_by(slug="tile-service-project")
+            )
+        ).delete(synchronize_session=False)
+        db.query(Level2Calibration).filter(
+            Level2Calibration.project_id.in_(
+                db.query(Project.id).filter_by(slug="tile-service-project")
+            )
+        ).delete(synchronize_session=False)
+        db.query(Level2Image).filter(
+            Level2Image.base_filename.in_(["tile_svc_near.fits", "tile_svc_far.fits"])
+        ).delete(synchronize_session=False)
+        db.query(Project).filter_by(slug="tile-service-project").delete()
+        db.query(Band).filter_by(name="F150W-tilesvc").delete()
+        db.query(Instrument).filter_by(name="NIRCam-tilesvc").delete()
+        db.query(User).filter_by(username="tileserviceowner").delete()
+        db.commit()
+        db.close()
+
+
+def test_create_epochs_persists_and_associates_calibrations_in_mjd_range(test_engine):
+    """create_epochs bulk-inserts Epoch rows and links only calibrations whose MJD is in range.
+
+    Runs on its own session for the same reason as the other service-layer
+    integration tests: create_epochs calls db.commit() internally.
+    """
+    from src.services.epoch_service import create_epochs
+
+    TestSession = sessionmaker(bind=test_engine)
+    db = TestSession()
+    try:
+        user = User(
+            username="epochserviceowner",
+            email="epochserviceowner@diffpype.local",
+            is_active=True,
+            hashed_password="dummy_hash_for_testing",
+        )
+        db.add(user)
+        db.flush()
+        project = Project(
+            name="EpochServiceProject", slug="epoch-service-project", user_id=user.id
+        )
+        db.add(project)
+        instrument = Instrument(name="NIRCam-epochsvc")
+        band = Band(name="F150W-epochsvc", central_lambda=1.501)
+        db.add_all([instrument, band])
+        db.flush()
+        tile = Tile(
+            name="EpochSvcTile",
+            ra=10.0,
+            decl=20.0,
+            delta_ra=0.2,
+            delta_decl=0.2,
+            coord_sys=2000,
+            project_id=project.id,
+        )
+        other_tile = Tile(
+            name="EpochSvcOtherTile",
+            ra=200.0,
+            decl=-40.0,
+            delta_ra=0.2,
+            delta_decl=0.2,
+            coord_sys=2000,
+            project_id=project.id,
+        )
+        db.add_all([tile, other_tile])
+        db.flush()
+
+        def _make_cal(base_filename, mjd_avg, associated_tile):
+            image = Level2Image(
+                base_filename=base_filename,
+                ra=10.0,
+                decl=20.0,
+                exp_time=1.0,
+                mjd_avg=mjd_avg,
+                target_name="EPOCHSVC-TARGET",
+                obs_start=_utc(2024, 1, 1),
+                instrument_id=instrument.id,
+                band_id=band.id,
+            )
+            db.add(image)
+            db.flush()
+            cal = Level2Calibration(
+                level2_image_id=image.id,
+                project_id=project.id,
+                current_file_ext=".fits",
+                plate_scale=0.03,
+            )
+            db.add(cal)
+            db.flush()
+            db.execute(
+                tile_level2_calibration_association.insert().values(
+                    tile_id=associated_tile.id, level2_calibration_id=cal.id
+                )
+            )
+            return cal
+
+        in_range_cal = _make_cal("epoch_svc_in_range.fits", 60300.5, tile)
+        _make_cal(
+            "epoch_svc_out_of_range.fits", 61000.0, tile
+        )  # right tile, wrong MJD -> must NOT be associated
+        _make_cal(
+            "epoch_svc_wrong_tile.fits", 60300.6, other_tile
+        )  # right MJD, wrong tile -> must NOT be associated
+        db.commit()
+
+        created = create_epochs(
+            db,
+            project.id,
+            [
+                {
+                    "start_date": _utc(2024, 1, 1),
+                    "end_date": _utc(2024, 1, 2),
+                    "start_mjd": 60300.0,
+                    "end_mjd": 60301.0,
+                    "tile_id": tile.id,
+                    "band_id": band.id,
+                }
+            ],
+        )
+
+        assert len(created) == 1
+        epoch = created[0]
+        assert epoch.id is not None
+        assoc_ids = {
+            row.level2_calibration_id
+            for row in db.execute(
+                text(
+                    "SELECT level2_calibration_id FROM epoch_level2_calibration_association "
+                    "WHERE epoch_id = :eid"
+                ),
+                {"eid": epoch.id},
+            ).all()
+        }
+        assert assoc_ids == {in_range_cal.id}
+    finally:
+        db.execute(
+            text(
+                "DELETE FROM epoch_level2_calibration_association "
+                "WHERE epoch_id IN (SELECT id FROM epochs WHERE project_id IN "
+                "(SELECT id FROM projects WHERE slug = 'epoch-service-project'))"
+            )
+        )
+        db.execute(
+            text(
+                "DELETE FROM tile_level2_calibration_association "
+                "WHERE tile_id IN (SELECT id FROM tiles WHERE project_id IN "
+                "(SELECT id FROM projects WHERE slug = 'epoch-service-project'))"
+            )
+        )
+        db.query(Epoch).filter(
+            Epoch.project_id.in_(
+                db.query(Project.id).filter_by(slug="epoch-service-project")
+            )
+        ).delete(synchronize_session=False)
+        db.query(Level2Calibration).filter(
+            Level2Calibration.project_id.in_(
+                db.query(Project.id).filter_by(slug="epoch-service-project")
+            )
+        ).delete(synchronize_session=False)
+        db.query(Level2Image).filter(
+            Level2Image.base_filename.in_(
+                [
+                    "epoch_svc_in_range.fits",
+                    "epoch_svc_out_of_range.fits",
+                    "epoch_svc_wrong_tile.fits",
+                ]
+            )
+        ).delete(synchronize_session=False)
+        db.query(Tile).filter(
+            Tile.name.in_(["EpochSvcTile", "EpochSvcOtherTile"])
+        ).delete(synchronize_session=False)
+        db.query(Project).filter_by(slug="epoch-service-project").delete()
+        db.query(Band).filter_by(name="F150W-epochsvc").delete()
+        db.query(Instrument).filter_by(name="NIRCam-epochsvc").delete()
+        db.query(User).filter_by(username="epochserviceowner").delete()
+        db.commit()
+        db.close()
+
+
+def test_create_mosaic_computes_footprint_and_barycenter_from_constituent_calibrations(
+    test_engine, mocker
+):
+    """create_mosaic unions footprints of calibrations linked via BOTH tile and epoch M2M tables.
+
+    Runs on its own session for the same reason as the other service-layer
+    integration tests: create_mosaic calls db.commit() internally. Mocks the
+    Celery dispatch: worker_heavy is a real running container consuming this
+    queue, so an un-mocked .delay() risks a race where it flips the mosaic's
+    status before this test's assertions read it — the DB footprint/barycenter
+    computation is what this test verifies, not the dispatch itself (already
+    covered by unit tests).
+    """
+    from src.services.mosaic_service import create_mosaic
+
+    mocker.patch(
+        "src.worker.tasks.run_mosaic_drizzle.delay",
+        return_value=MagicMock(id="fake-mosaic-task-id"),
+    )
+
+    TestSession = sessionmaker(bind=test_engine)
+    db = TestSession()
+    try:
+        user = User(
+            username="mosaicserviceowner",
+            email="mosaicserviceowner@diffpype.local",
+            is_active=True,
+            hashed_password="dummy_hash_for_testing",
+        )
+        db.add(user)
+        db.flush()
+        project = Project(
+            name="MosaicServiceProject", slug="mosaic-service-project", user_id=user.id
+        )
+        db.add(project)
+        instrument = Instrument(name="NIRCam-mosaicsvc")
+        band = Band(name="F150W-mosaicsvc", central_lambda=1.501)
+        other_band = Band(name="F277W-mosaicsvc", central_lambda=2.776)
+        db.add_all([instrument, band, other_band])
+        db.flush()
+        tile = Tile(
+            name="MosaicSvcTile",
+            ra=10.0,
+            decl=20.0,
+            delta_ra=0.5,
+            delta_decl=0.5,
+            coord_sys=2000,
+            project_id=project.id,
+        )
+        db.add(tile)
+        db.flush()
+        epoch = Epoch(
+            start_date=_utc(2024, 1, 1),
+            end_date=_utc(2024, 1, 2),
+            start_mjd=60300.0,
+            end_mjd=60301.0,
+            project_id=project.id,
+            tile_id=tile.id,
+            band_id=band.id,
+        )
+        db.add(epoch)
+        db.flush()
+
+        def _make_associated_cal(base_filename, ra, band_row):
+            image = Level2Image(
+                base_filename=base_filename,
+                ra=ra,
+                decl=20.0,
+                exp_time=1.0,
+                mjd_avg=60300.5,
+                target_name="MOSAICSVC-TARGET",
+                obs_start=_utc(2024, 1, 1),
+                instrument_id=instrument.id,
+                band_id=band_row.id,
+            )
+            db.add(image)
+            db.flush()
+            cal = Level2Calibration(
+                level2_image_id=image.id,
+                project_id=project.id,
+                current_file_ext=".fits",
+                plate_scale=0.03,
+                footprint=MOC.from_cone(
+                    lon=ra * u.deg, lat=20.0 * u.deg, radius=0.05 * u.deg, max_depth=12
+                ),
+            )
+            db.add(cal)
+            db.flush()
+            db.execute(
+                tile_level2_calibration_association.insert().values(
+                    tile_id=tile.id, level2_calibration_id=cal.id
+                )
+            )
+            db.execute(
+                epoch_level2_calibration_association.insert().values(
+                    epoch_id=epoch.id, level2_calibration_id=cal.id
+                )
+            )
+            return cal
+
+        _make_associated_cal("mosaic_svc_a.fits", 10.0, band)
+        _make_associated_cal("mosaic_svc_b.fits", 10.05, band)
+        # Right tile+epoch, wrong band -> must NOT contribute to the union.
+        _make_associated_cal("mosaic_svc_wrong_band.fits", 50.0, other_band)
+        db.commit()
+
+        job_id, mosaic_id = create_mosaic(
+            db,
+            project.id,
+            tile.id,
+            epoch.id,
+            band.id,
+            instrument.id,
+            filename="mosaic_svc.fits",
+            target_plate_scale=0.03,
+        )
+
+        assert job_id
+        mosaic = db.get(Level3Mosaic, mosaic_id)
+        assert mosaic.footprint is not None
+        assert mosaic.ra == pytest.approx(10.025, abs=0.1)
+        assert mosaic.decl == pytest.approx(20.0, abs=0.1)
+        assert mosaic.status == JobStatus.PENDING
+    finally:
+        db.execute(
+            text(
+                "DELETE FROM epoch_level2_calibration_association "
+                "WHERE epoch_id IN (SELECT id FROM epochs WHERE project_id IN "
+                "(SELECT id FROM projects WHERE slug = 'mosaic-service-project'))"
+            )
+        )
+        db.execute(
+            text(
+                "DELETE FROM tile_level2_calibration_association "
+                "WHERE tile_id IN (SELECT id FROM tiles WHERE project_id IN "
+                "(SELECT id FROM projects WHERE slug = 'mosaic-service-project'))"
+            )
+        )
+        db.query(Level3Mosaic).filter(
+            Level3Mosaic.project_id.in_(
+                db.query(Project.id).filter_by(slug="mosaic-service-project")
+            )
+        ).delete(synchronize_session=False)
+        db.query(Epoch).filter(
+            Epoch.project_id.in_(
+                db.query(Project.id).filter_by(slug="mosaic-service-project")
+            )
+        ).delete(synchronize_session=False)
+        db.query(Level2Calibration).filter(
+            Level2Calibration.project_id.in_(
+                db.query(Project.id).filter_by(slug="mosaic-service-project")
+            )
+        ).delete(synchronize_session=False)
+        db.query(Level2Image).filter(
+            Level2Image.base_filename.in_(
+                [
+                    "mosaic_svc_a.fits",
+                    "mosaic_svc_b.fits",
+                    "mosaic_svc_wrong_band.fits",
+                ]
+            )
+        ).delete(synchronize_session=False)
+        db.query(Tile).filter_by(name="MosaicSvcTile").delete()
+        db.query(Project).filter_by(slug="mosaic-service-project").delete()
+        db.query(Band).filter(
+            Band.name.in_(["F150W-mosaicsvc", "F277W-mosaicsvc"])
+        ).delete(synchronize_session=False)
+        db.query(Instrument).filter_by(name="NIRCam-mosaicsvc").delete()
+        db.query(User).filter_by(username="mosaicserviceowner").delete()
+        db.commit()
+        db.close()
+
+
+def test_bulk_upsert_images_and_calibrations_is_idempotent(test_engine):
+    """A real Core bulk upsert: first call inserts, an identical second call is a safe no-op.
+
+    Runs on its own session (not the transactional `db` fixture) because
+    bulk_upsert_images_and_calibrations calls db.commit() internally, which
+    would otherwise end the fixture's outer transaction early. Committed rows
+    are explicitly deleted at the end per the integration-test isolation rule.
+    """
+    from src.services.ingest_service import bulk_upsert_images_and_calibrations
+
+    TestSession = sessionmaker(bind=test_engine)
+    db = TestSession()
+    try:
+        user = User(
+            username="bulkupsertowner",
+            email="bulkupsertowner@diffpype.local",
+            is_active=True,
+            hashed_password="dummy_hash_for_testing",
+        )
+        db.add(user)
+        db.flush()
+        project = Project(
+            name="BulkUpsertProject", slug="bulk-upsert-project", user_id=user.id
+        )
+        db.add(project)
+        instrument = Instrument(name="NIRCam-bulk")
+        band = Band(name="F150W-bulk", central_lambda=1.501)
+        db.add_all([instrument, band])
+        db.flush()
+        db.commit()
+
+        moc = MOC.from_cone(
+            lon=10 * u.deg, lat=20 * u.deg, radius=0.01 * u.deg, max_depth=10
+        )
+        df = pd.DataFrame(
+            [
+                {
+                    "base_filename": "bulk_upsert_test_001.fits",
+                    "current_file_ext": ".fits",
+                    "ra": 10.0,
+                    "decl": 20.0,
+                    "exp_time": 100.0,
+                    "mjd_avg": 60300.0,
+                    "target_name": "BULKTEST",
+                    "obs_start": _utc(2024, 1, 1),
+                    "instrument_name": "NIRCam-bulk",
+                    "band_name": "F150W-bulk",
+                    "plate_scale": 0.03,
+                    "footprint": moc,
+                }
+            ]
+        )
+
+        count_first = bulk_upsert_images_and_calibrations(db, project.id, df)
+        assert count_first == 1
+
+        image = (
+            db.query(Level2Image)
+            .filter_by(base_filename="bulk_upsert_test_001.fits")
+            .one()
+        )
+        cal = (
+            db.query(Level2Calibration)
+            .filter_by(level2_image_id=image.id, project_id=project.id)
+            .one()
+        )
+        assert cal.plate_scale == 0.03
+        assert cal.status == JobStatus.COMPLETE
+
+        count_second = bulk_upsert_images_and_calibrations(db, project.id, df)
+        assert (
+            count_second == 1
+        )  # still "processed" 1 df row, but persisted no duplicate
+        assert (
+            db.query(Level2Image)
+            .filter_by(base_filename="bulk_upsert_test_001.fits")
+            .count()
+            == 1
+        )
+        assert (
+            db.query(Level2Calibration)
+            .filter_by(level2_image_id=image.id, project_id=project.id)
+            .count()
+            == 1
+        )
+    finally:
+        db.query(Level2Calibration).filter(
+            Level2Calibration.project_id.in_(
+                db.query(Project.id).filter_by(slug="bulk-upsert-project")
+            )
+        ).delete(synchronize_session=False)
+        db.query(Level2Image).filter_by(
+            base_filename="bulk_upsert_test_001.fits"
+        ).delete()
+        db.query(Project).filter_by(slug="bulk-upsert-project").delete()
+        db.query(Band).filter_by(name="F150W-bulk").delete()
+        db.query(Instrument).filter_by(name="NIRCam-bulk").delete()
+        db.query(User).filter_by(username="bulkupsertowner").delete()
+        db.commit()
+        db.close()

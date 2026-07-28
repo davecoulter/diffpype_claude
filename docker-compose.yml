@@ -77,11 +77,15 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME:-diffpype-data}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-s3}
+      LOCAL_STORAGE_ROOT: ${LOCAL_STORAGE_ROOT:-./data}
     ports:
       - "${API_PORT:-8000}:8000"
     volumes:
       - ./src:/app/src
       - ./migrations:/app/migrations
+      - ${LOCAL_STORAGE_HOST_PATH:-./local_storage_data}:/data
     depends_on:
       db:
         condition: service_healthy
@@ -110,12 +114,16 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME:-diffpype-data}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-s3}
+      LOCAL_STORAGE_ROOT: ${LOCAL_STORAGE_ROOT:-./data}
     deploy:
       resources:
         limits:
           memory: ${WORKER_LIGHT_MEM_LIMIT:-512m}
     volumes:
       - ./src:/app/src
+      - ${LOCAL_STORAGE_HOST_PATH:-./local_storage_data}:/data
     depends_on:
       db:
         condition: service_healthy
@@ -144,12 +152,16 @@ services:
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-minioadmin}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-minioadmin}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME:-diffpype-data}
+      S3_REGION: ${S3_REGION:-us-east-1}
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-s3}
+      LOCAL_STORAGE_ROOT: ${LOCAL_STORAGE_ROOT:-./data}
     deploy:
       resources:
         limits:
           memory: ${WORKER_HEAVY_MEM_LIMIT:-8g}
     volumes:
       - ./src:/app/src
+      - ${LOCAL_STORAGE_HOST_PATH:-./local_storage_data}:/data
     depends_on:
       db:
         condition: service_healthy

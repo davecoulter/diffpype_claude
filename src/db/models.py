@@ -66,10 +66,37 @@ class Project(TimestampMixin, Base):
 
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     name: Mapped[str] = mapped_column(sa.String, nullable=False)
+    slug: Mapped[str] = mapped_column(sa.String, unique=True, nullable=False)
     description: Mapped[str | None] = mapped_column(sa.String, nullable=True)
     user_id: Mapped[int] = mapped_column(sa.ForeignKey("users.id"), nullable=False)
 
     user: Mapped["User"] = relationship(back_populates="projects")
+
+
+class IngestBatch(TimestampMixin, Base):
+    """Tracks the progress of one asynchronous ingest run over a storage prefix."""
+
+    __tablename__ = "ingest_batches"
+
+    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(
+        sa.ForeignKey("projects.id"), nullable=False
+    )
+    s3_prefix: Mapped[str] = mapped_column(sa.String, nullable=False)
+    total_files: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
+    processed_files: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=0)
+    status: Mapped[JobStatus] = mapped_column(
+        sa.Enum(
+            JobStatus,
+            name="job_status",
+            create_type=False,
+            values_callable=lambda x: [e.value for e in x],
+        ),
+        nullable=False,
+        default=JobStatus.PENDING,
+    )
+
+    project: Mapped["Project"] = relationship()
 
 
 class StepDefinition(TimestampMixin, Base):
@@ -210,6 +237,8 @@ class Tile(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(sa.String, nullable=False)
     ra: Mapped[float] = mapped_column(sa.Float, nullable=False)
     decl: Mapped[float] = mapped_column(sa.Float, nullable=False)
+    # Degrees, not arcmin — tile_service.generate_tile_tessellation converts its
+    # tile_side_length_arc_min input to degrees (/ 60.0) before this gets set.
     delta_ra: Mapped[float] = mapped_column(sa.Float, nullable=False)
     delta_decl: Mapped[float] = mapped_column(sa.Float, nullable=False)
     footprint: Mapped["MOC | None"] = mapped_column(MOCType, nullable=True)
@@ -351,12 +380,15 @@ class Level3Mosaic(TimestampMixin, Base):
             "footprint",
             postgresql_using="gist",
         ),
+        sa.Index("ix_level3_mosaic_q3c", sa.text("q3c_ang2ipix(ra, decl)")),
     )
 
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     filename: Mapped[str] = mapped_column(sa.String, nullable=False)
     target_plate_scale: Mapped[float] = mapped_column(sa.Float, nullable=False)
     footprint: Mapped["MOC | None"] = mapped_column(MOCType, nullable=True)
+    ra: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    decl: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
     instrument_id: Mapped[int] = mapped_column(
         sa.ForeignKey("instruments.id"), nullable=False
     )

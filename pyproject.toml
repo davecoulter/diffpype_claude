@@ -29,6 +29,10 @@ dependencies = [
     # opentelemetry-instrumentation 0.48b0 imports pkg_resources, which setuptools
     # removed in 81+. Pin below that so the instrumentors can import.
     "setuptools<81",
+    "python-slugify==8.0.4",
+    "scipy==1.18.0",
+    "scikit-learn==1.9.0",
+    "pandas==3.0.5",
 ]
 
 [project.scripts]

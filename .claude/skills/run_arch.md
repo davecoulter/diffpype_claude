@@ -22,4 +22,5 @@ Once authorized:
 3. `docker compose up -d api worker_light worker_heavy` — recreates containers from fresh images; also clears stale worker memory
 4. `docker compose exec api alembic upgrade head` — skip if no SQLAlchemy model changes
 5. `docker compose exec api uv run pytest --cov=src --cov-fail-under=90 -q` — full test suite including integration tests against the real DB
-6. **Sphinx — run locally, not in Docker** (docs/ is not mounted in the container): `DATABASE_URL="postgresql+psycopg2://dummy:dummy@localhost/dummy" REDIS_URL="redis://localhost:6379/0" uv run sphinx-build -b html docs docs/_build/html -W`"
+6. **Sphinx — run locally, not in Docker** (docs/ is not mounted in the container): `DATABASE_URL="postgresql+psycopg2://dummy:dummy@localhost/dummy" REDIS_URL="redis://localhost:6379/0" uv run sphinx-build -b html docs docs/_build/html -W`
+7. Commit your changes (`git add` + `git commit`) before starting `genTests` — pre-commit's `--all-files` only checks git-tracked files, so QA validation is unreliable until new files are actually committed."
