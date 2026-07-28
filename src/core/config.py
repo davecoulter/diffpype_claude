@@ -22,6 +22,10 @@ class Settings(BaseSettings):
     enable_db_backup_cron: bool = False
     db_pool_size: int = 20
     db_max_overflow: int = 10
+    s3_endpoint_url: str = "http://minio:9000"
+    aws_access_key_id: str = "minioadmin"
+    aws_secret_access_key: str = "minioadmin"
+    s3_bucket_name: str = "diffpype-data"
 
 
 settings = Settings()  # type: ignore[call-arg]  # database_url/redis_url are populated from the environment at runtime; mypy can't see that.

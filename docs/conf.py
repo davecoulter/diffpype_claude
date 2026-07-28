@@ -49,9 +49,12 @@ suppress_warnings = ["myst.header"]
 # Mock heavy external deps so RTD does not need the full scientific Python stack.
 autodoc_mock_imports = [
     "bcrypt",
+    "boto3",
     "celery",
     "fastapi",
     "itsdangerous",
+    "mocpy",
+    "numpy",
     "opentelemetry",
     "psycopg2",
     "pydantic",

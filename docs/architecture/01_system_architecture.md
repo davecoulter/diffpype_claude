@@ -11,14 +11,14 @@ The system is divided into rigidly isolated layers to enforce testability and sc
 *   **API Boundary (FastAPI):** Acts as the thin HTTP entry point for the React Web UI. It uses Pydantic for strict I/O validation, but contains zero business logic, strictly delegating execution to the Shared Service Layer.
 *   **CLI Boundary (diffpype-manage):** Acts as the direct terminal entry point for DevOps, database seeding, and administrative tasks. Like the API, it parses inputs and delegates execution to the Shared Service Layer.
 *   **Task Orchestration (Celery):** Handles all asynchronous and long-running business logic. Workflows are constructed dynamically at runtime using native Celery Canvas primitives (groups, chains, chords).
-*   **Data Persistence (PostgreSQL + SQLAlchemy):** The central system of record for domain entities. Structured relational data is stored here. Spatial data utilizes Q3C and HealpixAlchemy.
+*   **Data Persistence (PostgreSQL + SQLAlchemy):** The central system of record for domain entities. Structured relational data is stored here. Spatial data utilizes Q3C and native HEALPix range-type columns.
 *   **Transient State & Queue (Redis):** Acts as the Celery message broker and result backend. Stores transient job progress, elapsed times, and stack traces for failed jobs.
 *   **Queue Monitoring (Flower):** A lightweight web dashboard connected to Redis, used strictly for system administration and real-time visualization of the Celery task queue.
 *   **Blob Storage (S3-Compatible):** The sole storage layer for all interstitial files (FITS images, catalogs). Configured dynamically via Docker environment variables.
 *   **Frontend (React):** A thin visualization layer utilizing unidirectional state flow. Features a traffic-light status grid. Integrates fitsmap for low-latency image visualization by fetching assets directly from S3 via pre-signed URLs.
 
 ### API Boundary Philosophy (Entity Separation)
-Diffpype strictly separates API Boundary models (Pydantic) from Data Entity models (SQLAlchemy). ORM objects must never be exposed directly to or populated directly from the API router. This deliberate separation prevents mass-assignment security vulnerabilities, stops internal database state from leaking to the frontend, and allows the SQLAlchemy models to utilize complex low-level extensions (like `Q3C` spatial indexing and `healpix-alchemy`) without conflicting with serialization logic.
+Diffpype strictly separates API Boundary models (Pydantic) from Data Entity models (SQLAlchemy). ORM objects must never be exposed directly to or populated directly from the API router. This deliberate separation prevents mass-assignment security vulnerabilities, stops internal database state from leaking to the frontend, and allows the SQLAlchemy models to utilize complex low-level extensions (like `Q3C` spatial indexing and native HEALPix range types) without conflicting with serialization logic.
 
 
 ### S3 Execution & Storage Optimization Strategy

@@ -9,12 +9,15 @@ These tests validate that:
 
 from datetime import datetime, timezone
 
+import astropy.units as u
 import pytest
-from sqlalchemy import text
+from mocpy import MOC
+from sqlalchemy import literal, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker
 
 from src.db.enums import CeleryQueue, JobStatus
+from src.db.spatial_types import MOCType
 from src.db.models import (
     Band,
     DummyImage,
@@ -335,15 +338,23 @@ def _make_image(db, instrument, band, base_filename="jw001_cal.fits"):
     return img
 
 
-def _make_calibration(db, image):
+def _make_calibration(db, image, project, plate_scale=0.031):
     cal = Level2Calibration(
         level2_image_id=image.id,
+        project_id=project.id,
         current_file_ext=".fits",
-        plate_scale=0.031,
+        plate_scale=plate_scale,
     )
     db.add(cal)
     db.flush()
     return cal
+
+
+def _make_project(db, user, name="DomainTestProject"):
+    project = Project(name=name, user_id=user.id)
+    db.add(project)
+    db.flush()
+    return project
 
 
 def test_instrument_and_band_roundtrip(db):
@@ -430,35 +441,172 @@ def test_q3c_extension_and_index_exist(db):
     assert idx is not None
 
 
-def test_level2_image_and_calibration_one_to_one(db):
-    """Level2Calibration round-trips, defaults status to PENDING, and back-navigates to its image."""
+def test_level2_calibration_roundtrip_and_back_reference(db, user):
+    """Level2Calibration round-trips, defaults status to PENDING, and its image lists it back."""
+    project = _make_project(db, user)
     instrument, band = _make_ref(db)
     image = _make_image(db, instrument, band)
-    cal = _make_calibration(db, image)
+    cal = _make_calibration(db, image, project)
 
     fetched = db.get(Level2Calibration, cal.id)
     assert fetched.status == JobStatus.PENDING  # Python-side default applied
     assert fetched.plate_scale == 0.031
     assert fetched.level2_image.base_filename == "jw001_cal.fits"
-    # One-to-one back reference from the immutable image to its calibration.
-    assert db.get(Level2Image, image.id).calibration.id == cal.id
+    assert fetched.project.id == project.id
+    # The immutable image now back-references a list of per-project calibrations.
+    assert [c.id for c in db.get(Level2Image, image.id).calibrations] == [cal.id]
 
 
-def test_level2_image_calibration_is_one_per_image(db):
-    """The unique constraint on level2_image_id forbids a second calibration for one image."""
+def test_same_image_different_projects_allows_two_calibrations(db, user):
+    """One raw image can carry a distinct Level2Calibration per Project."""
+    project_a = _make_project(db, user, name="ProjectA")
+    project_b = _make_project(db, user, name="ProjectB")
     instrument, band = _make_ref(db)
     image = _make_image(db, instrument, band)
-    _make_calibration(db, image)
+
+    cal_a = _make_calibration(db, image, project_a, plate_scale=0.031)
+    cal_b = _make_calibration(db, image, project_b, plate_scale=0.062)
+
+    fetched_image = db.get(Level2Image, image.id)
+    assert {c.id for c in fetched_image.calibrations} == {cal_a.id, cal_b.id}
+    assert {c.project_id for c in fetched_image.calibrations} == {
+        project_a.id,
+        project_b.id,
+    }
+
+
+def test_same_image_same_project_calibration_is_rejected(db, user):
+    """The composite (level2_image_id, project_id) unique forbids two calibrations per pair."""
+    project = _make_project(db, user)
+    instrument, band = _make_ref(db)
+    image = _make_image(db, instrument, band)
+    _make_calibration(db, image, project)
     with pytest.raises(IntegrityError):
         with db.begin_nested():
             db.add(
                 Level2Calibration(
                     level2_image_id=image.id,
+                    project_id=project.id,
                     current_file_ext=".fits",
                     plate_scale=0.062,
                 )
             )
             db.flush()
+
+
+def test_base_filename_is_unique(db):
+    """A duplicate Level2Image base_filename is rejected by the database."""
+    instrument, band = _make_ref(db)
+    _make_image(db, instrument, band, base_filename="jw_dupe_cal.fits")
+    with pytest.raises(IntegrityError):
+        with db.begin_nested():
+            _make_image(db, instrument, band, base_filename="jw_dupe_cal.fits")
+
+
+def test_footprint_moc_roundtrip_fidelity(db, user):
+    """A MOC footprint stored via MOCType reads back covering the identical sky region."""
+    project = _make_project(db, user)
+    instrument, band = _make_ref(db)
+    image = _make_image(db, instrument, band)
+    cal = _make_calibration(db, image, project)
+
+    original = MOC.from_cone(
+        lon=150.12 * u.deg, lat=2.31 * u.deg, radius=0.3 * u.deg, max_depth=9
+    )
+    cal.footprint = original
+    db.flush()
+    db.expire(cal)
+
+    reloaded = db.get(Level2Calibration, cal.id).footprint
+    assert isinstance(reloaded, MOC)
+    # Coverage-equivalence, not object identity: normalizing to depth 29 preserves the
+    # exact sky region (equal sky_fraction, empty symmetric difference) but not the
+    # original authoring order.
+    assert reloaded.sky_fraction == original.sky_fraction
+    assert original.symmetric_difference(reloaded).empty()
+
+
+def test_footprint_none_and_empty_and_update_paths(db, user):
+    """None persists as NULL, an empty MOC round-trips empty, and MOC<->None updates never crash."""
+    project = _make_project(db, user)
+    instrument, band = _make_ref(db)
+    image = _make_image(db, instrument, band)
+    cal = _make_calibration(db, image, project)
+
+    # Default (unset) footprint is NULL.
+    assert db.get(Level2Calibration, cal.id).footprint is None
+
+    # Regression for the mocpy __eq__(None) crash in ORM change detection:
+    # each of these transitions triggers compare_values(old, new).
+    moc = MOC.from_cone(lon=10 * u.deg, lat=20 * u.deg, radius=0.2 * u.deg, max_depth=8)
+    cal.footprint = moc
+    db.flush()
+    db.expire(cal)
+    assert db.get(Level2Calibration, cal.id).footprint.sky_fraction == moc.sky_fraction
+
+    cal.footprint = None
+    db.flush()
+    db.expire(cal)
+    assert db.get(Level2Calibration, cal.id).footprint is None
+
+    cal.footprint = MOC.new_empty(29)
+    db.flush()
+    db.expire(cal)
+    assert db.get(Level2Calibration, cal.id).footprint.empty()
+
+    # Update one loaded MOC to a coverage-different MOC: exercises the MOC-vs-MOC
+    # branch of compare_values (old value already materialized as a MOC).
+    loaded = db.get(Level2Calibration, cal.id)
+    assert loaded.footprint.empty()
+    loaded.footprint = moc
+    db.flush()
+    db.expire(loaded)
+    assert db.get(Level2Calibration, cal.id).footprint.sky_fraction == moc.sky_fraction
+
+
+def test_footprint_overlap_query_returns_only_spatial_matches(db, user):
+    """A native `&&` multirange overlap query returns only footprints covering the probe region.
+
+    This is the capability GitHub issue #26 targets: spatial matching expressed as an
+    indexed range query in the database, not deserialize-then-compute in Python. It is
+    the query that the doc-28 ingest/spatial-match tooling will build on.
+    """
+    project = _make_project(db, user)
+    instrument, band = _make_ref(db)
+    cal_near = _make_calibration(
+        db, _make_image(db, instrument, band, base_filename="near.fits"), project
+    )
+    cal_far = _make_calibration(
+        db, _make_image(db, instrument, band, base_filename="far.fits"), project
+    )
+    cal_near.footprint = MOC.from_cone(
+        lon=10 * u.deg, lat=20 * u.deg, radius=0.3 * u.deg, max_depth=9
+    )
+    cal_far.footprint = MOC.from_cone(
+        lon=200 * u.deg, lat=-40 * u.deg, radius=0.3 * u.deg, max_depth=9
+    )
+    db.flush()
+
+    # A probe that overlaps only the "near" footprint.
+    probe = MOC.from_cone(
+        lon=10.1 * u.deg, lat=20.0 * u.deg, radius=0.3 * u.deg, max_depth=9
+    )
+    stmt = (
+        select(Level2Calibration.id)
+        .where(Level2Calibration.footprint.op("&&")(literal(probe, type_=MOCType)))
+        .order_by(Level2Calibration.id)
+    )
+    hits = [row[0] for row in db.execute(stmt)]
+    assert hits == [cal_near.id]
+
+    # A probe far from both returns nothing.
+    empty_probe = MOC.from_cone(
+        lon=100 * u.deg, lat=0 * u.deg, radius=0.3 * u.deg, max_depth=9
+    )
+    empty_stmt = select(Level2Calibration.id).where(
+        Level2Calibration.footprint.op("&&")(literal(empty_probe, type_=MOCType))
+    )
+    assert db.execute(empty_stmt).all() == []
 
 
 def test_calibration_associates_with_many_tiles_and_epochs(db, user):
@@ -471,7 +619,7 @@ def test_calibration_associates_with_many_tiles_and_epochs(db, user):
     tile_b = _make_tile(db, project, name="Tile-B")
     epoch_a = _make_epoch(db, project, tile_a, band)
     epoch_b = _make_epoch(db, project, tile_b, band)
-    cal = _make_calibration(db, _make_image(db, instrument, band))
+    cal = _make_calibration(db, _make_image(db, instrument, band), project)
 
     cal.tiles.extend([tile_a, tile_b])
     cal.epochs.extend([epoch_a, epoch_b])
@@ -497,7 +645,7 @@ def test_duplicate_tile_association_is_rejected(db, user):
     db.flush()
     instrument, band = _make_ref(db)
     tile = _make_tile(db, project)
-    cal = _make_calibration(db, _make_image(db, instrument, band))
+    cal = _make_calibration(db, _make_image(db, instrument, band), project)
 
     db.execute(
         tile_level2_calibration_association.insert().values(

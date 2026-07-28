@@ -16,7 +16,21 @@ Derive the exact commands from context:
 - `git branch --show-current` — confirm on feature branch
 - `docker compose build [services]` — only services whose code changed
 - `docker compose up -d [services]` — recreate containers
-- `docker compose exec api alembic upgrade head` — only if models changed; otherwise mark SKIP
+- Migration step (only if models changed; otherwise mark SKIP): first check
+  `docker compose exec api alembic current`. Host and containerized services share one
+  Postgres instance (the `db` service's port is mapped straight to the host), so if the
+  migration was already applied earlier during `runPrompt` — common, since Claude often
+  applies and live-verifies migrations against the dev DB before `genTests` starts —
+  `alembic upgrade head` will correctly no-op. Treat that as a pass, not a failure, and
+  never ask the user to reset the database because of it.
+  To actually demonstrate the migration's code running, use a non-destructive round-trip
+  instead: `docker compose exec api alembic downgrade -1` then `alembic upgrade head`.
+  This re-executes the real upgrade/downgrade logic but only touches the objects that
+  migration owns. Only do this when the arch doc's Backfill Strategy confirms the affected
+  tables/columns are safe to round-trip (e.g. empty, or provably lossless); if not clearly
+  safe, ask the user first. A full database reset (`docker compose down -v` or dropping the
+  dev DB) is a last resort only and requires explicit human authorization per CLAUDE.md —
+  never do this automatically as part of a QA step.
 - `docker compose exec api uv run pytest --cov=src --cov-fail-under=90 -q`
 - Sphinx locally: `DATABASE_URL="postgresql+psycopg2://dummy:dummy@localhost/dummy" REDIS_URL="redis://localhost:6379/0" uv run sphinx-build -b html docs docs/_build/html -W`
 

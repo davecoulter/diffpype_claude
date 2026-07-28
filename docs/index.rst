@@ -40,6 +40,10 @@ Services
    :members:
    :undoc-members:
 
+.. automodule:: src.services.storage_service
+   :members:
+   :undoc-members:
+
 API (FastAPI)
 -------------
 
@@ -86,6 +90,10 @@ Database
    :undoc-members:
 
 .. automodule:: src.db.models
+   :members:
+   :undoc-members:
+
+.. automodule:: src.db.spatial_types
    :members:
    :undoc-members:
 

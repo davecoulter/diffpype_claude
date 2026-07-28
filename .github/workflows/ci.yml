@@ -29,6 +29,10 @@ jobs:
       ADMIN_USER: sysadmin
       ADMIN_PASSWORD: ${{ secrets.ADMIN_PASSWORD }}
       ADMIN_SECRET_KEY: ${{ secrets.ADMIN_SECRET_KEY }}
+      S3_ENDPOINT_URL: http://localhost:9000
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
+      S3_BUCKET_NAME: diffpype-data
 
     steps:
       - uses: actions/checkout@v4
@@ -61,6 +65,29 @@ jobs:
           done
           echo "Postgres did not become ready in time"
           docker logs diffpype-db
+          exit 1
+
+      # Stock image, no custom build needed (unlike Postgres, which needs Q3C baked in).
+      - name: Start MinIO
+        run: |
+          docker run -d --name diffpype-minio \
+            -e MINIO_ROOT_USER=minioadmin \
+            -e MINIO_ROOT_PASSWORD=minioadmin \
+            -p 9000:9000 \
+            minio/minio:RELEASE.2024-09-22T00-33-43Z server /data
+
+      - name: Wait for MinIO to accept connections
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:9000/minio/health/live; then
+              echo "MinIO is ready"
+              exit 0
+            fi
+            echo "Waiting for MinIO... ($i)"
+            sleep 2
+          done
+          echo "MinIO did not become ready in time"
+          docker logs diffpype-minio
           exit 1
 
       - uses: actions/setup-python@v5

@@ -1,6 +1,6 @@
 # Diffpype
 
-A lightweight DAG worker/queue skeleton for orchestrating distributed data-reduction and ML tasks: FastAPI + Celery (Canvas primitives) + PostgreSQL (Q3C / HealpixAlchemy) + Redis + React.
+A lightweight DAG worker/queue skeleton for orchestrating distributed data-reduction and ML tasks: FastAPI + Celery (Canvas primitives) + PostgreSQL (Q3C / native HEALPix range types) + Redis + React.
 
 This repository is the **generic orchestration base** — auth/RBAC, task dispatch, retry/DLQ handling, observability, and CI/docs scaffolding — with no domain-specific data-reduction logic baked in yet. It's meant to be a starting point for other astronomical, Q-based worker/queue systems, not a finished product.
 
