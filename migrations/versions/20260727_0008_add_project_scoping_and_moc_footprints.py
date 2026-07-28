@@ -92,15 +92,11 @@ def downgrade() -> None:
     op.drop_index("ix_tile_footprint_gist", table_name="tiles")
 
     # --- footprint (int8multirange) -> moc_str (Text) ---
-    op.add_column(
-        "level3_mosaics", sa.Column("moc_str", sa.Text(), nullable=True)
-    )
+    op.add_column("level3_mosaics", sa.Column("moc_str", sa.Text(), nullable=True))
     op.drop_column("level3_mosaics", "footprint")
     op.add_column("tiles", sa.Column("moc_str", sa.Text(), nullable=True))
     op.drop_column("tiles", "footprint")
-    op.add_column(
-        "level2_calibrations", sa.Column("moc_str", sa.Text(), nullable=True)
-    )
+    op.add_column("level2_calibrations", sa.Column("moc_str", sa.Text(), nullable=True))
     op.drop_column("level2_calibrations", "footprint")
 
     # --- Level2Image: drop base_filename uniqueness ---

@@ -31,9 +31,7 @@ def test_init_builds_client_from_settings(mocker):
 def test_upload_file_delegates_to_client_with_bucket(mocker):
     """upload_file forwards the local path, configured bucket, and key to boto3."""
     fake_client = MagicMock()
-    mocker.patch(
-        "src.services.storage_service.boto3.client", return_value=fake_client
-    )
+    mocker.patch("src.services.storage_service.boto3.client", return_value=fake_client)
 
     svc = S3StorageService(config=FAKE_CONFIG)
     svc.upload_file("/tmp/local.fits", "prefix/remote.fits")
@@ -46,9 +44,7 @@ def test_upload_file_delegates_to_client_with_bucket(mocker):
 def test_download_file_delegates_to_client_with_bucket(mocker):
     """download_file forwards the configured bucket, key, and local destination to boto3."""
     fake_client = MagicMock()
-    mocker.patch(
-        "src.services.storage_service.boto3.client", return_value=fake_client
-    )
+    mocker.patch("src.services.storage_service.boto3.client", return_value=fake_client)
 
     svc = S3StorageService(config=FAKE_CONFIG)
     svc.download_file("prefix/remote.fits", "/tmp/local.fits")

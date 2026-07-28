@@ -45,4 +45,6 @@ def test_download_of_missing_key_raises(storage, tmp_path):
     """Downloading a key that was never uploaded raises a clear client error, not a silent no-op."""
     dst_path = tmp_path / "should_not_exist.txt"
     with pytest.raises(botocore.exceptions.ClientError):
-        storage.download_file(f"integration-tests/{uuid.uuid4()}-missing.txt", str(dst_path))
+        storage.download_file(
+            f"integration-tests/{uuid.uuid4()}-missing.txt", str(dst_path)
+        )
