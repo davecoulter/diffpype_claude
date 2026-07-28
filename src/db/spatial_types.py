@@ -89,3 +89,25 @@ class MOCType(sa.TypeDecorator):
         if not isinstance(x, MOC) or not isinstance(y, MOC):
             return x is y
         return np.array_equal(x.to_depth29_ranges, y.to_depth29_ranges)
+
+
+def moc_to_ranges(moc: MOC | None) -> list[tuple[int, int]] | None:
+    """Convert a MOC to a plain list of depth-29 ``[lo, hi)`` integer range pairs.
+
+    The wire-safe representation for a footprint at every Pydantic/API/CLI
+    boundary: exactly the ranges ``MOCType`` binds/reads at the DB boundary, so
+    there is no separate encode/decode logic and no fidelity loss.
+    """
+    if moc is None:
+        return None
+    return [(int(lo), int(hi)) for lo, hi in moc.to_depth29_ranges]
+
+
+def ranges_to_moc(ranges: list[tuple[int, int]] | None) -> MOC | None:
+    """Convert a plain list of depth-29 ``[lo, hi)`` integer range pairs back to a MOC."""
+    if ranges is None:
+        return None
+    if not ranges:
+        return MOC.new_empty(MAX_DEPTH)
+    array = np.array(ranges, dtype=np.uint64)
+    return MOC.from_depth29_ranges(MAX_DEPTH, array)

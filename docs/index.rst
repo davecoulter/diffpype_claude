@@ -44,6 +44,26 @@ Services
    :members:
    :undoc-members:
 
+.. automodule:: src.services.project_service
+   :members:
+   :undoc-members:
+
+.. automodule:: src.services.ingest_service
+   :members:
+   :undoc-members:
+
+.. automodule:: src.services.tile_service
+   :members:
+   :undoc-members:
+
+.. automodule:: src.services.epoch_service
+   :members:
+   :undoc-members:
+
+.. automodule:: src.services.mosaic_service
+   :members:
+   :undoc-members:
+
 API (FastAPI)
 -------------
 
@@ -60,6 +80,26 @@ API (FastAPI)
    :undoc-members:
 
 .. automodule:: src.api.routes.meta
+   :members:
+   :undoc-members:
+
+.. automodule:: src.api.routes.projects
+   :members:
+   :undoc-members:
+
+.. automodule:: src.api.routes.ingest
+   :members:
+   :undoc-members:
+
+.. automodule:: src.api.routes.tiles
+   :members:
+   :undoc-members:
+
+.. automodule:: src.api.routes.epochs
+   :members:
+   :undoc-members:
+
+.. automodule:: src.api.routes.mosaics
    :members:
    :undoc-members:
 

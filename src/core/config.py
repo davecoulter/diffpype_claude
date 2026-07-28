@@ -26,6 +26,9 @@ class Settings(BaseSettings):
     aws_access_key_id: str = "minioadmin"
     aws_secret_access_key: str = "minioadmin"
     s3_bucket_name: str = "diffpype-data"
+    s3_region: str = "us-east-1"
+    storage_backend: str = "s3"
+    local_storage_root: str = "./data"
 
 
 settings = Settings()  # type: ignore[call-arg]  # database_url/redis_url are populated from the environment at runtime; mypy can't see that.

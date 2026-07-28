@@ -28,6 +28,8 @@ celery_app.conf.update(
     task_routes={
         "src.worker.tasks.sleep_and_update_status": {"queue": CeleryQueue.LIGHT},
         "src.worker.tasks.dlq_dump": {"queue": "dead_letter"},
+        "src.worker.tasks.run_ingest_batch": {"queue": CeleryQueue.HEAVY_MEMORY},
+        "src.worker.tasks.run_mosaic_drizzle": {"queue": CeleryQueue.HEAVY_MEMORY},
     },
 )
 
