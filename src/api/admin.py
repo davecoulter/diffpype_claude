@@ -6,7 +6,7 @@ from sqladmin.authentication import AuthenticationBackend
 from starlette.requests import Request
 
 from src.core.logger import get_logger
-from src.db.models import DummyImage, JobConfiguration, Project, StepDefinition, User
+from src.db.models import JobConfiguration, Project, StepDefinition, User
 from src.db.session import SessionLocal
 
 
@@ -99,25 +99,6 @@ class StepDefinitionAdmin(ModelView, model=StepDefinition):
     form_excluded_columns = [StepDefinition.created_at, StepDefinition.updated_at]
 
 
-class DummyImageAdmin(ModelView, model=DummyImage):
-    """Admin view for inspecting and managing DummyImage records."""
-
-    column_list = [
-        DummyImage.id,
-        DummyImage.status,
-        DummyImage.latest_job_id,
-        DummyImage.job_started_at,
-        DummyImage.created_at,
-    ]
-    form_excluded_columns = [
-        DummyImage.created_at,
-        DummyImage.updated_at,
-        DummyImage.job_started_at,
-        DummyImage.job_finished_at,
-        DummyImage.latest_job_id,
-    ]
-
-
 class JobConfigurationAdmin(ModelView, model=JobConfiguration):
     """Admin view for inspecting and managing JobConfiguration records."""
 
@@ -130,5 +111,4 @@ class JobConfigurationAdmin(ModelView, model=JobConfiguration):
     form_excluded_columns = [
         JobConfiguration.created_at,
         JobConfiguration.updated_at,
-        JobConfiguration.dummy_images,
     ]

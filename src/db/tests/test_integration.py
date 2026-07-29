@@ -4,7 +4,7 @@ These tests validate that:
   - Alembic migrations materialize the correct Postgres enum types and tables.
   - SQLAlchemy ORM enum mappings round-trip correctly through the database.
   - Status transitions write and read back the expected Python enum instances.
-  - The JobConfiguration table and its relationship to DummyImage round-trip correctly.
+  - The JobConfiguration table and its relationship to tracked entities round-trip correctly.
 """
 
 from datetime import datetime, timezone
@@ -23,8 +23,8 @@ from src.db.enums import CeleryQueue, JobStatus
 from src.db.spatial_types import MOCType
 from src.db.models import (
     Band,
-    DummyImage,
     Epoch,
+    IngestBatch,
     Instrument,
     JobConfiguration,
     Level2Calibration,
@@ -53,26 +53,29 @@ def test_celery_queue_enum_type_exists_in_db(db):
     assert {r[0] for r in rows} == {"gpu", "heavy_memory", "light"}
 
 
-def test_dummy_image_status_roundtrip(db):
-    image = DummyImage(status=JobStatus.IN_PROCESS)
-    db.add(image)
+def test_ingest_batch_status_roundtrip(db, user):
+    project = _make_project(db, user)
+    batch = IngestBatch(
+        project_id=project.id, s3_prefix="raw/", status=JobStatus.IN_PROCESS
+    )
+    db.add(batch)
     db.flush()
 
-    fetched = db.get(DummyImage, image.id)
+    fetched = db.get(IngestBatch, batch.id)
     assert fetched.status == JobStatus.IN_PROCESS
     assert isinstance(fetched.status, JobStatus)
 
     fetched.status = JobStatus.COMPLETE
     db.flush()
 
-    updated = db.get(DummyImage, image.id)
+    updated = db.get(IngestBatch, batch.id)
     assert updated.status == JobStatus.COMPLETE
 
 
 def test_step_definition_queue_roundtrip(db, user):
     step = StepDefinition(
         name="integration_test_step",
-        task_name="src.worker.tasks.sleep_and_update_status",
+        task_name="src.worker.tasks.run_ingest_batch",
         queue=CeleryQueue.LIGHT,
         user_id=user.id,
     )
@@ -84,69 +87,66 @@ def test_step_definition_queue_roundtrip(db, user):
     assert isinstance(fetched.queue, CeleryQueue)
 
 
-def test_all_job_status_transitions(db):
+def test_all_job_status_transitions(db, user):
     """Every status value in the enum can be written to and read from the DB."""
+    project = _make_project(db, user)
     for status in JobStatus:
-        image = DummyImage(status=status)
-        db.add(image)
+        batch = IngestBatch(project_id=project.id, s3_prefix="raw/", status=status)
+        db.add(batch)
         db.flush()
-        assert db.get(DummyImage, image.id).status == status
+        assert db.get(IngestBatch, batch.id).status == status
 
 
 def test_job_configuration_roundtrip(db, user):
     config = JobConfiguration(
-        job_kwargs={"sleep_duration": 7},
-        execution_command="diffpype-manage run-dummy --sleep 7",
+        job_kwargs={"batch_size": 7},
+        execution_command="diffpype-manage ingest --project-id 1 --s3-prefix raw/",
         user_id=user.id,
     )
     db.add(config)
     db.flush()
 
     fetched = db.get(JobConfiguration, config.id)
-    assert fetched.job_kwargs == {"sleep_duration": 7}
-    assert fetched.execution_command == "diffpype-manage run-dummy --sleep 7"
+    assert fetched.job_kwargs == {"batch_size": 7}
+    assert (
+        fetched.execution_command
+        == "diffpype-manage ingest --project-id 1 --s3-prefix raw/"
+    )
 
 
-def test_dummy_image_job_configuration_relationship(db, user):
+def test_ingest_batch_job_configuration_relationship(db, user):
+    """IngestBatch's new job_configuration_id FK links to a JobConfiguration (doc 29 §2)."""
+    project = _make_project(db, user)
     config = JobConfiguration(
-        job_kwargs={"sleep_duration": 3},
-        execution_command="diffpype-manage run-dummy --sleep 3",
+        job_kwargs={"batch_size": 3},
+        execution_command="diffpype-manage ingest",
         user_id=user.id,
     )
-    image = DummyImage(status=JobStatus.IN_PROCESS, job_configuration=config)
-    db.add(image)
+    batch = IngestBatch(
+        project_id=project.id,
+        s3_prefix="raw/",
+        status=JobStatus.IN_PROCESS,
+        job_configuration=config,
+    )
+    db.add(batch)
     db.flush()
 
-    fetched = db.get(DummyImage, image.id)
-    # Forward relationship: image -> its configuration.
+    fetched = db.get(IngestBatch, batch.id)
     assert fetched.job_configuration_id == config.id
-    assert fetched.job_configuration.job_kwargs == {"sleep_duration": 3}
-    # Back-populated relationship: configuration -> its images.
-    assert fetched in config.dummy_images
+    assert fetched.job_configuration.job_kwargs == {"batch_size": 3}
 
 
-def test_dummy_image_job_configuration_nullable(db):
-    image = DummyImage(status=JobStatus.PENDING)
-    db.add(image)
+def test_ingest_batch_job_configuration_nullable(db, user):
+    project = _make_project(db, user)
+    batch = IngestBatch(
+        project_id=project.id, s3_prefix="raw/", status=JobStatus.PENDING
+    )
+    db.add(batch)
     db.flush()
 
-    fetched = db.get(DummyImage, image.id)
+    fetched = db.get(IngestBatch, batch.id)
     assert fetched.job_configuration_id is None
     assert fetched.job_configuration is None
-
-
-def test_dummy_image_timestamps_populated(db):
-    """The TimestampMixin server defaults populate created_at/updated_at on insert."""
-    image = DummyImage(status=JobStatus.PENDING)
-    db.add(image)
-    db.flush()
-    db.refresh(image)
-
-    assert image.created_at is not None
-    assert image.updated_at is not None
-    # job_started_at/job_finished_at remain null until the worker stamps them.
-    assert image.job_started_at is None
-    assert image.job_finished_at is None
 
 
 def test_job_configuration_timestamps_populated(db, user):
@@ -211,7 +211,7 @@ def test_step_definition_user_relationship(db, user):
     """StepDefinition.user back-populates correctly when user_id is set."""
     step = StepDefinition(
         name="provenance_test_step",
-        task_name="src.worker.tasks.sleep_and_update_status",
+        task_name="src.worker.tasks.run_ingest_batch",
         queue=CeleryQueue.LIGHT,
         user_id=user.id,
     )
@@ -223,8 +223,8 @@ def test_step_definition_user_relationship(db, user):
     assert fetched.user.username == user.username
 
 
-def test_sysadmin_seeding_links_step_definition_to_user(mocker, test_engine):
-    """seed_step_definitions upserts a sysadmin User and assigns them to the StepDefinition."""
+def test_sysadmin_seeding_creates_sysadmin_user(mocker, test_engine):
+    """seed_step_definitions upserts a sysadmin User with a hashed password."""
     from src.db.seed import seed_step_definitions
 
     TestSession = sessionmaker(bind=test_engine)
@@ -241,9 +241,6 @@ def test_sysadmin_seeding_links_step_definition_to_user(mocker, test_engine):
         assert (
             sysadmin.hashed_password is not None and len(sysadmin.hashed_password) > 0
         )
-        step = db.query(StepDefinition).filter_by(name="dummy_sleep").one_or_none()
-        assert step is not None
-        assert step.user_id == sysadmin.id
     finally:
         db.close()
 
@@ -263,7 +260,6 @@ def _cleanup_seeded_rows(TestSession):
         sysadmin_id = cleanup.query(User.id).filter_by(username="sysadmin").scalar()
         if sysadmin_id is not None:
             cleanup.query(JobConfiguration).filter_by(user_id=sysadmin_id).delete()
-        cleanup.query(StepDefinition).filter_by(name="dummy_sleep").delete()
         cleanup.query(User).filter_by(username="sysadmin").delete()
         cleanup.query(Instrument).filter(
             Instrument.name.in_(["NIRCam", "MIRI"])
@@ -303,6 +299,7 @@ def _make_tile(db, project, name="Tile-test", ra=150.12, decl=2.31):
         decl=decl,
         delta_ra=0.0417,
         delta_decl=0.0417,
+        healpix_index=(ra, decl),
         project_id=project.id,
     )
     db.add(tile)
@@ -334,6 +331,7 @@ def _make_image(db, instrument, band, base_filename="jw001_cal.fits"):
         mjd_avg=60312.0,
         target_name="TESTTARGET",
         obs_start=_utc(2024, 1, 2),
+        healpix_index=(150.12, 2.31),
         instrument_id=instrument.id,
         band_id=band.id,
     )
@@ -621,6 +619,50 @@ def test_footprint_overlap_query_returns_only_spatial_matches(db, user):
     assert db.execute(empty_stmt).all() == []
 
 
+def test_footprint_contains_healpix_index_point_query(db, user):
+    """A native `@>` containment query returns only point-index rows inside a footprint.
+
+    This is the cross-table capability doc 29 §2 enables: `footprint @> healpix_index`
+    (int8multirange @> int8range) is an indexed containment test performed in the
+    database, not a Python-side point-in-polygon computation. q3c handles proximity
+    search on the raw ra/decl; the healpix_index handles containment against another
+    table's footprint.
+    """
+    project = _make_project(db, user)
+    instrument, band = _make_ref(db)
+
+    # A tile whose footprint covers a small cone centered on the "inside" image.
+    tile = _make_tile(db, project)  # ra/decl 150.12/2.31, healpix_index populated
+    tile.footprint = MOC.from_cone(
+        lon=150.12 * u.deg, lat=2.31 * u.deg, radius=0.3 * u.deg, max_depth=12
+    )
+    # One image point inside the footprint (same coords as the tile center), one far away.
+    img_inside = _make_image(db, instrument, band, base_filename="inside.fits")
+    img_outside = Level2Image(
+        base_filename="outside.fits",
+        ra=200.0,
+        decl=-40.0,
+        exp_time=1.0,
+        target_name="OUT",
+        obs_start=_utc(2024, 1, 1),
+        healpix_index=(200.0, -40.0),
+        instrument_id=instrument.id,
+        band_id=band.id,
+    )
+    db.add(img_outside)
+    db.flush()
+
+    stmt = (
+        select(Level2Image.id)
+        .select_from(Tile)
+        .join(Level2Image, Tile.footprint.op("@>")(Level2Image.healpix_index))
+        .where(Tile.id == tile.id)
+        .order_by(Level2Image.id)
+    )
+    hits = [row[0] for row in db.execute(stmt)]
+    assert hits == [img_inside.id]
+
+
 def test_calibration_associates_with_many_tiles_and_epochs(db, user):
     """A single Level2Calibration can belong to multiple Tiles and Epochs via the junction tables."""
     project = _make_project(db, user)
@@ -749,6 +791,7 @@ def test_create_tiles_persists_and_associates_overlapping_calibrations(test_engi
                 exp_time=1.0,
                 target_name="TILESVC-TARGET",
                 obs_start=_utc(2024, 1, 1),
+                healpix_index=(ra, decl),
                 instrument_id=instrument.id,
                 band_id=band.id,
             )
@@ -865,6 +908,7 @@ def test_create_epochs_persists_and_associates_calibrations_in_mjd_range(test_en
             decl=20.0,
             delta_ra=0.2,
             delta_decl=0.2,
+            healpix_index=(10.0, 20.0),
             coord_sys=2000,
             project_id=project.id,
         )
@@ -874,6 +918,7 @@ def test_create_epochs_persists_and_associates_calibrations_in_mjd_range(test_en
             decl=-40.0,
             delta_ra=0.2,
             delta_decl=0.2,
+            healpix_index=(200.0, -40.0),
             coord_sys=2000,
             project_id=project.id,
         )
@@ -889,6 +934,7 @@ def test_create_epochs_persists_and_associates_calibrations_in_mjd_range(test_en
                 mjd_avg=mjd_avg,
                 target_name="EPOCHSVC-TARGET",
                 obs_start=_utc(2024, 1, 1),
+                healpix_index=(10.0, 20.0),
                 instrument_id=instrument.id,
                 band_id=band.id,
             )
@@ -1038,6 +1084,7 @@ def test_create_mosaic_computes_footprint_and_barycenter_from_constituent_calibr
             decl=20.0,
             delta_ra=0.5,
             delta_decl=0.5,
+            healpix_index=(10.0, 20.0),
             coord_sys=2000,
             project_id=project.id,
         )
@@ -1064,6 +1111,7 @@ def test_create_mosaic_computes_footprint_and_barycenter_from_constituent_calibr
                 mjd_avg=60300.5,
                 target_name="MOSAICSVC-TARGET",
                 obs_start=_utc(2024, 1, 1),
+                healpix_index=(ra, 20.0),
                 instrument_id=instrument.id,
                 band_id=band_row.id,
             )
@@ -1114,6 +1162,10 @@ def test_create_mosaic_computes_footprint_and_barycenter_from_constituent_calibr
         assert mosaic.footprint is not None
         assert mosaic.ra == pytest.approx(10.025, abs=0.1)
         assert mosaic.decl == pytest.approx(20.0, abs=0.1)
+        # healpix_index populated from the computed barycenter (doc 29 §2).
+        from src.db.spatial_types import _point_to_depth29_cell
+
+        assert mosaic.healpix_index == _point_to_depth29_cell(mosaic.ra, mosaic.decl)
         assert mosaic.status == JobStatus.PENDING
     finally:
         db.execute(
@@ -1233,6 +1285,10 @@ def test_bulk_upsert_images_and_calibrations_is_idempotent(test_engine):
         )
         assert cal.plate_scale == 0.03
         assert cal.status == JobStatus.COMPLETE
+        # healpix_index is populated from the row's ra/decl (doc 29 §2, NOT NULL).
+        from src.db.spatial_types import _point_to_depth29_cell
+
+        assert image.healpix_index == _point_to_depth29_cell(10.0, 20.0)
 
         count_second = bulk_upsert_images_and_calibrations(db, project.id, df)
         assert (

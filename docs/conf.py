@@ -6,7 +6,7 @@ sys.path.insert(0, os.path.abspath(".."))
 # Provide dummy values so modules that read env vars at import time don't
 # crash during the Sphinx autodoc import phase. No real connections are made.
 os.environ.setdefault(
-    "DATABASE_URL", "postgresql+psycopg2://sphinx:sphinx@localhost/sphinx"
+    "DATABASE_URL", "postgresql+psycopg://sphinx:sphinx@localhost/sphinx"
 )
 os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 os.environ.setdefault("ADMIN_USER", "sysadmin")
@@ -58,7 +58,7 @@ autodoc_mock_imports = [
     "numpy",
     "opentelemetry",
     "pandas",
-    "psycopg2",
+    "psycopg",
     "pydantic",
     "pydantic_settings",
     "redis",

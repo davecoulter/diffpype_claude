@@ -2,8 +2,7 @@ import bcrypt
 from sqlalchemy.orm import Session
 
 from src.core.config import settings
-from src.db.enums import CeleryQueue
-from src.db.models import Band, Instrument, StepDefinition, User
+from src.db.models import Band, Instrument, User
 from src.db.session import SessionLocal
 
 # Baseline JWST reference data so a fresh sandbox is immediately usable. Central
@@ -68,7 +67,7 @@ def _seed_reference_data(db: Session) -> None:
 
 
 def seed_step_definitions() -> None:
-    """Upsert a sysadmin User, the dummy StepDefinition, and baseline Instrument/Band reference data."""
+    """Upsert the sysadmin User and baseline Instrument/Band reference data."""
     db = SessionLocal()
     try:
         hashed = bcrypt.hashpw(
@@ -87,17 +86,6 @@ def seed_step_definitions() -> None:
         else:
             sysadmin.hashed_password = hashed
             db.flush()
-
-        exists = db.query(StepDefinition).filter_by(name="dummy_sleep").one_or_none()
-        if exists is None:
-            db.add(
-                StepDefinition(
-                    name="dummy_sleep",
-                    task_name="src.worker.tasks.sleep_and_update_status",
-                    queue=CeleryQueue.LIGHT,
-                    user_id=sysadmin.id,
-                )
-            )
 
         _seed_reference_data(db)
         db.commit()

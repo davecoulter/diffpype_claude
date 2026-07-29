@@ -6,7 +6,6 @@ import pytest
 from src.cli import (
     _colorize_status,
     _colors_enabled,
-    _elapsed_label,
     _entity_to_dict,
     _format_moc_for_display,
     _poll_until_terminal,
@@ -17,13 +16,11 @@ from src.cli import (
     cmd_create_mosaic,
     cmd_create_project,
     cmd_create_tiles,
-    cmd_get_dummy,
     cmd_ingest,
     cmd_ingest_status,
     cmd_mosaic_status,
     cmd_populate_demo_project,
     cmd_reset_db,
-    cmd_run_dummy,
     cmd_seed_db,
     cmd_tessellate_tiles,
     main,
@@ -49,20 +46,13 @@ def test_entity_to_dict_serializes_sqlalchemy_object():
 
 
 def test_entity_to_dict_serializes_pydantic_model():
-    from src.api.schemas import DummyImageStatus
+    from src.api.schemas import StatusMetadata
 
-    model = DummyImageStatus(id=3, status="pending", latest_job_id=None)
+    model = StatusMetadata(value="pending", label="Pending", color="yellow")
 
     result = _entity_to_dict(model)
 
-    assert result == {
-        "id": 3,
-        "status": "pending",
-        "latest_job_id": None,
-        "created_at": None,
-        "job_started_at": None,
-        "job_finished_at": None,
-    }
+    assert result == {"value": "pending", "label": "Pending", "color": "yellow"}
 
 
 def test_format_moc_for_display_reduces_moc_to_compact_sq_deg_string():
@@ -198,126 +188,9 @@ def test_print_entity_table_leaves_status_plain_when_colors_disabled(mocker, cap
     assert "complete" in out
 
 
-def test_parser_recognises_get_dummy_command():
-    args = build_parser().parse_args(["get-dummy", "--id", "5"])
-    assert args.command == "get-dummy"
-    assert args.id == 5
-
-
-def test_main_routes_get_dummy_to_cmd_get_dummy(mocker):
-    mock_cmd = mocker.patch("src.cli.cmd_get_dummy")
-    main(["get-dummy", "--id", "1"])
-    mock_cmd.assert_called_once()
-
-
-def test_cmd_get_dummy_prints_table_for_found_image(mocker, capsys):
-    from src.db.models import DummyImage
-
-    fake_image = DummyImage(id=5, status="complete", latest_job_id="abc-123")
-    mocker.patch("src.services.job_service.get_dummy_job", return_value=fake_image)
-    mocker.patch("src.db.session.SessionLocal", return_value=MagicMock())
-
-    cmd_get_dummy(argparse.Namespace(command="get-dummy", id=5))
-
-    out = capsys.readouterr().out
-    assert "5" in out
-    assert "complete" in out
-
-
-def test_cmd_get_dummy_prints_error_for_missing_image(mocker, capsys):
-    mocker.patch("src.services.job_service.get_dummy_job", return_value=None)
-    mocker.patch("src.db.session.SessionLocal", return_value=MagicMock())
-
-    cmd_get_dummy(argparse.Namespace(command="get-dummy", id=999))
-
-    out = capsys.readouterr().out
-    assert "999" in out
-    assert "Error" in out
-
-
-def test_cmd_get_dummy_closes_session(mocker):
-    mocker.patch("src.services.job_service.get_dummy_job", return_value=None)
-    mock_session = MagicMock()
-    mocker.patch("src.db.session.SessionLocal", return_value=mock_session)
-
-    cmd_get_dummy(argparse.Namespace(command="get-dummy", id=1))
-
-    mock_session.close.assert_called_once()
-
-
-def test_elapsed_label_run_time_when_finished():
-    from datetime import datetime, timedelta, timezone
-
-    start = datetime(2026, 7, 7, 12, 0, 0, tzinfo=timezone.utc)
-    image = MagicMock(
-        job_started_at=start,
-        job_finished_at=start + timedelta(seconds=75),
-        created_at=start,
-    )
-
-    assert _elapsed_label(image) == "Run Time: 1m 15s"
-
-
-def test_elapsed_label_run_time_when_still_running():
-    from datetime import datetime, timedelta, timezone
-
-    started = datetime.now(timezone.utc) - timedelta(seconds=5)
-    image = MagicMock(job_started_at=started, job_finished_at=None, created_at=started)
-
-    assert _elapsed_label(image).startswith("Run Time:")
-
-
-def test_elapsed_label_queue_time_when_pending():
-    from datetime import datetime, timedelta, timezone
-
-    created = datetime.now(timezone.utc) - timedelta(seconds=3)
-    image = MagicMock(job_started_at=None, job_finished_at=None, created_at=created)
-
-    assert _elapsed_label(image).startswith("Queue Time:")
-
-
-def test_elapsed_label_none_when_no_timestamps():
-    image = MagicMock(job_started_at=None, job_finished_at=None, created_at=None)
-
-    assert _elapsed_label(image) is None
-
-
-def test_cmd_get_dummy_prints_elapsed_run_time(mocker, capsys):
-    from datetime import datetime, timedelta, timezone
-
-    from src.db.models import DummyImage
-
-    start = datetime(2026, 7, 7, 12, 0, 0, tzinfo=timezone.utc)
-    fake_image = DummyImage(
-        id=5,
-        status="complete",
-        latest_job_id="abc-123",
-        job_started_at=start,
-        job_finished_at=start + timedelta(seconds=30),
-    )
-    mocker.patch("src.services.job_service.get_dummy_job", return_value=fake_image)
-    mocker.patch("src.db.session.SessionLocal", return_value=MagicMock())
-
-    cmd_get_dummy(argparse.Namespace(command="get-dummy", id=5))
-
-    out = capsys.readouterr().out
-    assert "Run Time: 30s" in out
-
-
 def test_parser_recognises_seed_db_command():
     args = build_parser().parse_args(["seed-db"])
     assert args.command == "seed-db"
-
-
-def test_parser_recognises_run_dummy_command():
-    args = build_parser().parse_args(["run-dummy"])
-    assert args.command == "run-dummy"
-    assert args.sleep == 5
-
-
-def test_run_dummy_accepts_custom_sleep_arg():
-    args = build_parser().parse_args(["run-dummy", "--sleep", "3"])
-    assert args.sleep == 3
 
 
 def test_parser_recognises_reset_db_command():
@@ -333,12 +206,6 @@ def test_missing_command_exits():
 def test_main_routes_seed_db_to_cmd_seed_db(mocker):
     mock_cmd = mocker.patch("src.cli.cmd_seed_db")
     main(["seed-db"])
-    mock_cmd.assert_called_once()
-
-
-def test_main_routes_run_dummy_to_cmd_run_dummy(mocker):
-    mock_cmd = mocker.patch("src.cli.cmd_run_dummy")
-    main(["run-dummy"])
     mock_cmd.assert_called_once()
 
 
@@ -404,34 +271,6 @@ def test_cmd_seed_db_logs_to_stdout(mocker, capsys):
     out = capsys.readouterr().out
     assert "Seeding database" in out
     assert "Done" in out
-
-
-def test_cmd_run_dummy_calls_dispatch_with_config_and_closes_session(mocker):
-    mock_dispatch = mocker.patch(
-        "src.services.job_service.dispatch_dummy_job",
-        return_value=("fake-job-id", 42),
-    )
-    mock_session = MagicMock()
-    mocker.patch("src.db.session.SessionLocal", return_value=mock_session)
-
-    cmd_run_dummy(argparse.Namespace(command="run-dummy", sleep=3))
-
-    mock_dispatch.assert_called_once_with(mock_session, {"sleep_duration": 3})
-    mock_session.close.assert_called_once()
-
-
-def test_cmd_run_dummy_logs_job_id_to_stdout(mocker, capsys):
-    mocker.patch(
-        "src.services.job_service.dispatch_dummy_job",
-        return_value=("abc-123", 7),
-    )
-    mocker.patch("src.db.session.SessionLocal", return_value=MagicMock())
-
-    cmd_run_dummy(argparse.Namespace(command="run-dummy", sleep=5))
-
-    out = capsys.readouterr().out
-    assert "abc-123" in out
-    assert "7" in out
 
 
 def test_parser_recognises_create_project_command():
