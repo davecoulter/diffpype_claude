@@ -99,6 +99,9 @@ def create_mosaic(
         footprint=footprint,
         ra=ra,
         decl=decl,
+        # Present iff ra/decl are (both None when no constituent calibrations exist);
+        # PointHEALPixType computes the depth-29 cell from the tuple.
+        healpix_index=(ra, decl) if ra is not None and decl is not None else None,
         instrument_id=instrument_id,
         band_id=band_id,
         epoch_id=epoch_id,

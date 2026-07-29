@@ -50,6 +50,30 @@ def test_create_tiles_returns_empty_list_for_no_tiles():
     mock_db.execute.assert_not_called()
 
 
+def test_create_tiles_populates_healpix_index_from_ra_decl():
+    """Every inserted Tile row must carry healpix_index=(ra, decl) (the column is NOT NULL)."""
+    mock_db = MagicMock()
+    # No created rows -> the association step does no further work.
+    mock_db.execute.return_value.scalars.return_value.all.return_value = []
+    tiles = [
+        {
+            "name": "T1",
+            "ra": 150.0,
+            "decl": 2.0,
+            "delta_ra": 0.1,
+            "delta_decl": 0.1,
+            "footprint": None,
+        }
+    ]
+
+    create_tiles(mock_db, project_id=7, tiles=tiles)
+
+    # First execute() is the bulk Tile insert; its second positional arg is the rows list.
+    rows = mock_db.execute.call_args_list[0].args[1]
+    assert rows[0]["healpix_index"] == (150.0, 2.0)
+    assert rows[0]["project_id"] == 7
+
+
 def test_tile_with_most_calibrations_returns_the_best_tile_id():
     mock_db = MagicMock()
     mock_db.execute.return_value.first.return_value = MagicMock(tile_id=39)

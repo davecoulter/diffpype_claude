@@ -79,29 +79,11 @@ def _print_entity_table(entities: list, fields: list[str] | None = None) -> None
     print(tabulate(rows, headers="keys", tablefmt="grid"))
 
 
-def _elapsed_label(image) -> str | None:
-    """Return a Run Time or Queue Time label derived from a DummyImage's timestamps."""
-    from datetime import datetime, timezone
-
-    def _fmt(delta) -> str:
-        total = max(0, int(delta.total_seconds()))
-        minutes, seconds = divmod(total, 60)
-        return f"{minutes}m {seconds}s" if minutes else f"{seconds}s"
-
-    now = datetime.now(timezone.utc)
-    if image.job_started_at is not None:
-        end = image.job_finished_at or now
-        return f"Run Time: {_fmt(end - image.job_started_at)}"
-    if image.created_at is not None:
-        return f"Queue Time: {_fmt(now - image.created_at)}"
-    return None
-
-
 def cmd_seed_db(_: argparse.Namespace) -> None:
-    """Insert the foundational StepDefinition records into the database."""
+    """Insert the foundational sysadmin and reference-data records into the database."""
     from src.db.seed import seed_step_definitions
 
-    print("Seeding database: inserting foundational StepDefinition records...")
+    print("Seeding database: inserting foundational sysadmin + reference records...")
     seed_step_definitions()
     print("Done.")
 
@@ -121,43 +103,6 @@ def cmd_reset_db(args: argparse.Namespace) -> None:
 
     print("Schema reset complete. Auto-seeding foundational records...")
     cmd_seed_db(args)
-
-
-def cmd_get_dummy(args: argparse.Namespace) -> None:
-    """Fetch a DummyImage by ID from the database and print it as an ASCII table."""
-    from src.db.session import SessionLocal
-    from src.services import job_service
-
-    db = SessionLocal()
-    try:
-        image = job_service.get_dummy_job(db, args.id)
-    finally:
-        db.close()
-
-    if image is None:
-        print(f"Error: No DummyImage found with id={args.id}.")
-        return
-
-    _print_entity_table([image])
-    label = _elapsed_label(image)
-    if label:
-        print(label)
-
-
-def cmd_run_dummy(args: argparse.Namespace) -> None:
-    """Dispatch a dummy Celery job through the service layer and print its identifiers."""
-    from src.db.session import SessionLocal
-    from src.services import job_service
-
-    config = {"sleep_duration": args.sleep}
-
-    db = SessionLocal()
-    try:
-        job_id, image_id = job_service.dispatch_dummy_job(db, config)
-    finally:
-        db.close()
-
-    print(f"Dispatched dummy job. job_id={job_id}, image_id={image_id}")
 
 
 def cmd_create_project(args: argparse.Namespace) -> None:
@@ -465,31 +410,9 @@ def build_parser() -> argparse.ArgumentParser:
         "seed-db", help="Seed foundational records into the database."
     )
 
-    get_dummy = subparsers.add_parser(
-        "get-dummy", help="Fetch and display the status of a DummyImage by ID."
-    )
-    get_dummy.add_argument(
-        "--id",
-        type=int,
-        required=True,
-        metavar="ID",
-        help="The integer ID of the DummyImage to fetch.",
-    )
-
     subparsers.add_parser(
         "reset-db",
         help="Drop all tables and rebuild the schema from Alembic migrations.",
-    )
-
-    run_dummy = subparsers.add_parser(
-        "run-dummy", help="Dispatch a dummy Celery job and print the job ID."
-    )
-    run_dummy.add_argument(
-        "--sleep",
-        type=int,
-        default=5,
-        metavar="SECONDS",
-        help="Sleep duration in seconds (1-10, default 5).",
     )
 
     create_project = subparsers.add_parser(
@@ -641,12 +564,8 @@ def main(argv: list[str] | None = None) -> None:
 
     if args.command == "seed-db":
         cmd_seed_db(args)
-    elif args.command == "get-dummy":
-        cmd_get_dummy(args)
     elif args.command == "reset-db":
         cmd_reset_db(args)
-    elif args.command == "run-dummy":
-        cmd_run_dummy(args)
     elif args.command == "create-project":
         cmd_create_project(args)
     elif args.command == "ingest":

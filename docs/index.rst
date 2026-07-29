@@ -75,10 +75,6 @@ API (FastAPI)
    :members:
    :undoc-members:
 
-.. automodule:: src.api.routes.jobs
-   :members:
-   :undoc-members:
-
 .. automodule:: src.api.routes.meta
    :members:
    :undoc-members:

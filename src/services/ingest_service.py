@@ -124,6 +124,10 @@ def bulk_upsert_images_and_calibrations(
         "band_id",
     ]
     image_rows = df[image_columns].to_dict("records")
+    # Level2Image.healpix_index is NOT NULL; derive it from each row's ra/decl
+    # (PointHEALPixType computes the depth-29 cell from the tuple).
+    for row in image_rows:
+        row["healpix_index"] = (row["ra"], row["decl"])
     db.execute(
         pg_insert(Level2Image)
         .values(image_rows)

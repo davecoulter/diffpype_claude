@@ -159,7 +159,16 @@ def create_tiles(db: Session, project_id: int, tiles: list[dict]) -> list[Tile]:
     if not tiles:
         return []
 
-    rows = [{**tile, "project_id": project_id} for tile in tiles]
+    # healpix_index is derived from ra/decl (PointHEALPixType computes the depth-29
+    # cell from the tuple); Tile.healpix_index is NOT NULL, so every row must carry it.
+    rows = [
+        {
+            **tile,
+            "project_id": project_id,
+            "healpix_index": (tile["ra"], tile["decl"]),
+        }
+        for tile in tiles
+    ]
     created = db.execute(sa.insert(Tile).returning(Tile), rows).scalars().all()
     db.flush()
 

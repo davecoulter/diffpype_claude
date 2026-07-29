@@ -1,0 +1,61 @@
+##### 29: Database Driver Migration, Native Point-HEALPix Types & Stage-0 Decommission
+**Version:** 0.3
+
+###### Preamble
+This document completes the Stage 1 database foundation by migrating the PostgreSQL client driver from psycopg2 to psycopg3, expanding native range-type spatial indexing to point geometries (ra, decl), and fully decommissioning the Stage-0 DummyImage scaffolding. *(Operational service features—Storage Model B staging sync, configurable tessellation modes, the stuck-job watchdog, and database-backed Celery Beat—are deferred to Document 30).*
+
+###### 1. Database Driver Migration (psycopg2 → psycopg3, Resolves Issue #30)
+*   **Directive:** Upgrade the database driver to psycopg3 to enable native PostgreSQL range and multirange type adaptation without text-literal serialization hacks.
+*   **Behavior:**
+    *   **Dependency:** In pyproject.toml, replace psycopg2-binary with psycopg[binary].
+    *   **Connection Strings:** Update all connection strings from postgresql+psycopg2:// to postgresql+psycopg:// across .env, .env.example, docker-compose.yml, src/db/tests/conftest.py, and .github/workflows/ci.yml.
+    *   **Sphinx Mocking:** In docs/conf.py, update autodoc_mock_imports replacing "psycopg2" with "psycopg".
+    *   **TypeDecorator Simplification:** In src/db/spatial_types.py, refactor MOCType to use native psycopg3 Range and MultiRange bindings directly, eliminating the text-literal ({[lo,hi),...}) serialization layer and regex parsing.
+*   **Testing:** Run the full existing test suite to ensure type adaptation, exception classes, and transaction boundaries function identically under psycopg3.
+*   **Compliance:** No Alembic migration is required for this section (driver change only, no schema change).
+
+###### 2. Native Point-HEALPix Range Type (Resolves Issue #26)
+*   **Directive:** Any domain entity possessing its own ra/decl coordinate columns must carry a depth-29 healpix_index column backed by PostgreSQL's native INT8RANGE type. This enables fast, indexed cross-table spatial containment queries (Tile.footprint @> Level2Image.healpix_index).
+*   **Behavior:**
+    *   **Model Placement Rule:** Tile (migrated from Integer), Level2Image (new), and Level3Mosaic (new) each receive a healpix_index column. Level2Calibration does *not* receive one as it lacks native ra/decl columns. Nullability mirrors each model's existing ra/decl nullability: Tile.healpix_index and Level2Image.healpix_index are `nullable=False` (both models' ra/decl are already required, so the cell is always computable at insert time); Level3Mosaic.healpix_index is `nullable=True`, present if and only if ra/decl are (both derived from the same union-of-footprints computation, absent when a mosaic has no constituent calibrations yet) — PointHEALPixType must pass `None` through process_bind_param/process_result_value unchanged for this case, persisting and reading back NULL without attempting range computation.
+    *   **TypeDecorator:** In src/db/spatial_types.py, implement PointHEALPixType backed by INT8RANGE. PointHEALPixType.process_bind_param accepts a (ra, decl) tuple, calculates the depth-29 cell $i$, and encodes it as the single-cell range $[i, i+1)$ automatically so service callers can assign coordinates directly.
+    *   **Service-Layer Population (required):** healpix_index must actually be populated wherever these rows are constructed, or the NOT NULL constraints above reject every insert. Update tile_service.create_tiles's row-construction dict, ingest_service.bulk_upsert_images_and_calibrations's image_columns/Core-insert values, and mosaic_service.create_mosaic's Level3Mosaic(...) constructor to pass (ra, decl) into healpix_index alongside the existing footprint/ra/decl assignments.
+    *   **Schema Addition:** Add job_configuration_id (sa.ForeignKey("job_configurations.id"), nullable=True) to IngestBatch, bringing it to parity with Level3Mosaic in preparation for job staleness overrides in Document 30.
+    *   **Indexing:** Declare GiST indexes on healpix_index across Tile, Level2Image, and Level3Mosaic using the ix_<table_name>_healpix_index_gist naming convention.
+    *   **Migration Strategy (Hand-Authored):** Hand-author an Alembic migration — autogenerate cannot safely emit an int → int8range type cast, and there's no existing data to preserve since healpix_index isn't currently written by any code path. Drop the legacy Tile.healpix_index integer column and recreate it as INT8RANGE (`nullable=False`, matching Tile.ra/decl). Add healpix_index to Level2Image (`nullable=False`, matching its ra/decl) and to Level3Mosaic (`nullable=True`, matching its ra/decl). Add job_configuration_id to IngestBatch. Create GiST indexes on healpix_index for all three models.
+*   **Breaking Changes:** Changing Tile.healpix_index from Integer to INT8RANGE is a breaking schema change for any query expecting an integer cell ID.
+*   **Testing:** Unit test PointHEALPixType encoding/decoding and range calculation from (ra, decl) tuples, including that binding None persists NULL and reads back as None (the Level3Mosaic no-constituent-calibrations case). Add an integration test confirming footprint @> healpix_index queries correctly filter point records located within tile footprints. Extend tile_service/ingest_service/mosaic_service test coverage to assert healpix_index is populated correctly by create_tiles, bulk_upsert_images_and_calibrations, and create_mosaic respectively.
+
+###### 3. Decommission Stage-0 DummyImage Scaffolding (Resolves Issue #33)
+*   **Directive:** Remove all Stage-0 walking-skeleton entities, routes, and tasks, and strip entity-specific status writes from worker crash handling.
+*   **Behavior:**
+    *   **Code Cleanup:** Delete the DummyImage model, job_service.dispatch_dummy_job and get_dummy_job, worker.tasks.sleep_and_update_status, the run-dummy and get-dummy CLI commands, POST / GET /api/v1/jobs/dummy routes, DummyImageAdmin view, dummy_sleep StepDefinition seed row, and associated unit/integration tests.
+    *   **Worker Base Task Simplification:** In src/worker/base_task.py, remove the DummyImage status-write lookup block from DiffpypeTask.on_failure. Retain logger events, db.rollback(), and the DLQ dispatch (dlq_dump). Tasks like run_ingest_batch and run_mosaic_drizzle continue to handle their own domain-entity failure updates internally.
+*   **Testing:** Verify no dangling imports, route registrations, or admin views remain. Add a regression test asserting DiffpypeTask.on_failure executes rollback, logging, and DLQ dispatch cleanly on task failure without attempting a DummyImage status write.
+*   **Compliance:** Hand-author an Alembic migration dropping the dummy_images table.
+
+###### 4. Environment Variables
+*   **Directive:** Update connection string defaults across template files.
+*   **Note:** .env.example and .env must remain identical in their set of keys. (No new keys are added in this document; connection string values are updated to postgresql+psycopg://).
+
+###### 5. Dependencies & Packages
+*   **Packages:** Replace psycopg2-binary with psycopg[binary] in pyproject.toml.
+*   **Mocking:** In docs/conf.py, replace "psycopg2" with "psycopg" in autodoc_mock_imports.
+
+###### 6. CLAUDE.md Compliance & Implementation Sequencing
+*   **Implementation Sequencing:** Implement §1 (Driver migration) first. Implement §2 (Point-HEALPix migration) second. Implement §3 (DummyImage decommission) third.
+*   **Documentation Registration:**
+    *   Delete references to 29_system_refinements_watchdog.md and add 29_psycopg3_healpix_dummy_cleanup.md to the toctree in docs/architecture/index.md.
+
+###### Logs
+
+###### 2026-07-28 — Implementation (`runPrompt`)
+*   **§1 (driver):** Swapped `psycopg2-binary` → `psycopg[binary]==3.2.3` (`pyproject.toml`, `uv.lock`, vestigial root `requirements.txt`). Updated every `postgresql+psycopg2://` → `postgresql+psycopg://` connection string — the doc's file list was incomplete, so also caught `docker-compose.prod.yml`, `docs/conf.py`'s dummy `DATABASE_URL`, and (implicitly) the `jobs.py` driver comment (that file is deleted by §3). `autodoc_mock_imports` `psycopg2` → `psycopg`. Refactored `MOCType` to bind/read native `MultiRange([Range(...)])` instead of the `{[lo,hi),...}` text literal + `_RANGE_RE` regex, verified round-trip against the live DB.
+*   **§2 (point-HEALPix):** Added `PointHEALPixType` (`INT8RANGE`): binds a `(ra, decl)` tuple → depth-29 NESTED cell via `MOC.from_lonlat(...).to_depth29_ranges[0][0]` (helper `_point_to_depth29_cell`) → single-cell `[i, i+1)`; reads back the integer cell; `None` passes through. Migrated `Tile.healpix_index` `Integer` → `PointHEALPixType` (`nullable=False`), added `healpix_index` to `Level2Image` (`nullable=False`) and `Level3Mosaic` (`nullable=True`), added `IngestBatch.job_configuration_id` FK (nullable), and GiST indexes on all three point columns. Wired service-layer population in `tile_service.create_tiles`, `ingest_service.bulk_upsert_images_and_calibrations`, and `mosaic_service.create_mosaic`. Verified the target `footprint @> healpix_index` (`int8multirange @> int8range`) containment query works live and in an integration test. Migration `0011` (hand-authored, drop+recreate for the un-castable `int → int8range`).
+*   **§3 (DummyImage decommission):** Deleted the model, `job_service.dispatch_dummy_job`/`get_dummy_job` (leaving `job_service.py` a docstring-only placeholder for doc 30's `reconcile_stuck_jobs`), `sleep_and_update_status`, `run-dummy`/`get-dummy` CLI commands, the entire `/jobs/dummy` router + its registration, `DummyImageAdmin`, the `dummy_sleep` seed row, the dummy Pydantic schemas, and all their tests. Migration `0012` drops `dummy_images`.
+*   **Deviation from the doc (flagged):** §3 said to *retain* `db.rollback()` in `DiffpypeTask.on_failure`. Removed it along with the whole DB block instead: once the entity status-write is gone, `on_failure` opens no session, and a `SessionLocal().rollback()` on a brand-new session is a guaranteed no-op — retaining it would be dead code. `on_failure` is now strictly logging + DLQ dispatch. `run_ingest_batch`/`run_mosaic_drizzle` already own their own crash-safe FAILED transitions; SIGKILL/OOM orphans are doc 30's watchdog's job. Regression test asserts the entity-agnostic behavior.
+*   **Migration application:** The live dev DB held 22 tiles / 100 level2_images, which the new `NOT NULL` adds can't apply over. Per the doc's "no real data yet, delete everything" migration strategy, reset the dev DB (`alembic downgrade base` → `upgrade head`) and re-seeded — the migrations are authored for the empty-schema case that CI/pytest/reset always run.
+*   **Test re-basing:** `test_main.py`'s cross-cutting middleware tests (correlation-id, OTel trace, metrics, 500 handler, CORS) were re-based off the deleted `/jobs/dummy` onto `POST /api/v1/projects`. Several `test_integration.py` DummyImage tests (status round-trip, JobConfiguration relationship/nullability) were re-based onto `IngestBatch` (now that it has the FK). Result: 242 passed, 99% total coverage, `spatial_types.py` 100%. (The two `test_storage_service_integration.py` cases only "error" when pytest runs on the host — they target the container hostname `minio:9000`; they pass in-container or with `S3_ENDPOINT_URL=http://localhost:9002`.)
+
+###### 2026-07-28
+*   **Action:** Second `assessPrompt` pass on v0.3 found that Gemini's incremental revision (v0.2 → v0.3) didn't fully apply the requested v0.2 fixes: the nullability split came back reverted (all three healpix_index columns landed `nullable=True` instead of the confirmed Tile/Level2Image `nullable=False` split), the required "Service-Layer Population" bullet was dropped entirely (nothing in the doc instructed tile_service/ingest_service/mosaic_service to actually write healpix_index), the migration-strategy rationale sentence was lost, and the requested service-layer testing addition was replaced with an unrequested None-passthrough test. Applied all four corrections directly to §2 rather than issuing a second revision-note round-trip, since the content was already confirmed in the prior pass — folded the None-passthrough behavior into the nullability bullet (still correct, just scoped to the Level3Mosaic case) instead of dropping it.

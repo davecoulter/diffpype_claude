@@ -4,11 +4,10 @@ import tempfile
 import time
 
 import pandas as pd
-from sqlalchemy import func
 
 from src.core.logger import get_logger
 from src.db.enums import JobStatus
-from src.db.models import DummyImage, IngestBatch, JobConfiguration, Level3Mosaic
+from src.db.models import IngestBatch, JobConfiguration, Level3Mosaic
 from src.db.session import SessionLocal
 from src.services import ingest_service
 from src.services.storage_service import get_storage_service
@@ -17,46 +16,14 @@ from src.worker.celery_app import celery_app
 from src.worker.utils import build_cli_command
 
 
-@celery_app.task(base=DiffpypeTask, name="src.worker.tasks.sleep_and_update_status")
-def sleep_and_update_status(image_id: int, sleep_duration: int = 5) -> None:
-    log = get_logger()
-    log.info("task_started", image_id=image_id, sleep_duration=sleep_duration)
-
-    # Record the start time in its own short transaction so we do not hold a
-    # database connection open across the (potentially long) sleep.
-    db = SessionLocal()
-    try:
-        image = db.get(DummyImage, image_id)
-        assert image is not None, f"DummyImage {image_id} not found"
-        image.job_started_at = func.now()
-        db.commit()
-    finally:
-        db.close()
-
-    time.sleep(sleep_duration)
-
-    db = SessionLocal()
-    try:
-        image = db.get(DummyImage, image_id)
-        assert image is not None, f"DummyImage {image_id} not found"
-        image.status = JobStatus.COMPLETE
-        image.job_finished_at = func.now()
-        db.commit()
-    finally:
-        db.close()
-
-    log.info("task_completed", image_id=image_id)
-
-
 @celery_app.task(name="src.worker.tasks.run_ingest_batch")
 def run_ingest_batch(batch_id: int) -> None:
     """Scan an IngestBatch's storage prefix and bulk-upsert Level2Image/Level2Calibration rows.
 
-    Not built on DiffpypeTask: that base's on_failure hardcodes a DummyImage
-    status write, which would silently no-op (or worse, mutate an unrelated
-    DummyImage row sharing the same integer id) for this batch_id. Handles its
-    own crash-safety instead, matching the same guarantee (no orphaned
-    IN_PROCESS row) scoped to the entity this task actually tracks.
+    Not built on DiffpypeTask: that base's on_failure is entity-agnostic
+    (logging + DLQ dispatch only), so it can't transition this batch's row out
+    of IN_PROCESS on crash. This task handles its own crash-safety instead,
+    guaranteeing no orphaned IN_PROCESS row for the entity it actually tracks.
     """
     log = get_logger()
     log.info("ingest_batch_started", batch_id=batch_id)
@@ -135,8 +102,8 @@ def run_mosaic_drizzle(mosaic_id: int) -> None:
     constituent calibrations) is already the complete job specification —
     only the actual pixel-level drizzle is deferred, to a future
     JWST-pipeline-specific doc. Not built on DiffpypeTask for the same reason
-    as run_ingest_batch: that base's on_failure hardcodes a DummyImage status
-    write.
+    as run_ingest_batch: that base's on_failure is entity-agnostic and cannot
+    transition this mosaic's row out of IN_PROCESS on crash.
     """
     log = get_logger()
     log.info("mosaic_drizzle_started", mosaic_id=mosaic_id)

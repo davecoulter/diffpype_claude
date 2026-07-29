@@ -1,20 +1,39 @@
+from types import SimpleNamespace
+
 import pytest
 from fastapi.testclient import TestClient
 
 from src.api.main import app, sqladmin_exception_handler
 from src.core.logger import get_logger
 
-VALID_PAYLOAD = {"task_name": "dummy_sleep", "config": {"sleep_duration": 5}}
+# A real, mutating POST endpoint used to exercise cross-cutting middleware
+# (correlation-id header, OTel tracing, metrics, the 500 handler, CORS). The
+# Stage-0 /jobs/dummy endpoint that previously served this role was removed with
+# the DummyImage decommission (doc 29); project creation is its replacement.
+VALID_PAYLOAD = {"name": "Test Project", "description": None, "user_id": 1}
+
+
+def _mock_create_project(mocker, **overrides):
+    """Patch project_service.create_project to return a Project-like object."""
+    project = SimpleNamespace(
+        id=1,
+        name="Test Project",
+        slug="test-project",
+        description=None,
+        user_id=1,
+    )
+    kwargs = {"return_value": project}
+    kwargs.update(overrides)
+    return mocker.patch(
+        "src.api.routes.projects.project_service.create_project", **kwargs
+    )
 
 
 def test_correlation_id_header_is_a_32_char_hex_trace_id(mocker):
-    mocker.patch(
-        "src.services.job_service.dispatch_dummy_job",
-        return_value=("job-1", 1),
-    )
+    _mock_create_project(mocker)
     client = TestClient(app)
 
-    response = client.post("/api/v1/jobs/dummy", json=VALID_PAYLOAD)
+    response = client.post("/api/v1/projects", json=VALID_PAYLOAD)
 
     assert response.status_code == 200
     correlation_id = response.headers["X-Correlation-ID"]
@@ -30,10 +49,7 @@ def test_correlation_id_header_matches_active_otel_trace_id(mocker):
         InMemorySpanExporter,
     )
 
-    mocker.patch(
-        "src.services.job_service.dispatch_dummy_job",
-        return_value=("job-1", 1),
-    )
+    _mock_create_project(mocker)
     # main.py sets the global provider at import; attach an in-memory exporter to it
     # (the OTel global provider is a write-once singleton, so we cannot swap in a
     # fresh one here — we capture spans from the provider the app already uses).
@@ -41,7 +57,7 @@ def test_correlation_id_header_matches_active_otel_trace_id(mocker):
     trace.get_tracer_provider().add_span_processor(SimpleSpanProcessor(exporter))
 
     client = TestClient(app)
-    response = client.post("/api/v1/jobs/dummy", json=VALID_PAYLOAD)
+    response = client.post("/api/v1/projects", json=VALID_PAYLOAD)
 
     assert response.status_code == 200
     spans = exporter.get_finished_spans()
@@ -51,12 +67,9 @@ def test_correlation_id_header_matches_active_otel_trace_id(mocker):
 
 
 def test_metrics_endpoint_exposes_prometheus_text(mocker):
-    mocker.patch(
-        "src.services.job_service.dispatch_dummy_job",
-        return_value=("job-1", 1),
-    )
+    _mock_create_project(mocker)
     client = TestClient(app)
-    client.post("/api/v1/jobs/dummy", json=VALID_PAYLOAD)  # record one sample
+    client.post("/api/v1/projects", json=VALID_PAYLOAD)  # record one sample
 
     response = client.get("/metrics")
 
@@ -79,13 +92,10 @@ def test_sqladmin_exception_handler_logs_and_reraises(mocker):
 
 
 def test_unhandled_exception_returns_500(mocker):
-    mocker.patch(
-        "src.services.job_service.dispatch_dummy_job",
-        side_effect=RuntimeError("kaboom"),
-    )
+    _mock_create_project(mocker, side_effect=RuntimeError("kaboom"))
     client = TestClient(app, raise_server_exceptions=False)
 
-    response = client.post("/api/v1/jobs/dummy", json=VALID_PAYLOAD)
+    response = client.post("/api/v1/projects", json=VALID_PAYLOAD)
 
     assert response.status_code == 500
     assert response.json() == {"detail": "Internal Server Error"}
@@ -104,11 +114,10 @@ def test_admin_unauthenticated_redirects_to_login():
     assert "/admin/login" in response.headers["location"]
 
 
-def test_old_unversioned_jobs_path_returns_404():
-    """Old /jobs/... routes must 404 after the /api/v1 prefix was introduced."""
+def test_old_unversioned_projects_path_returns_404():
+    """Old unversioned routes must 404 after the /api/v1 prefix was introduced."""
     client = TestClient(app)
-    assert client.post("/jobs/dummy", json=VALID_PAYLOAD).status_code == 404
-    assert client.get("/jobs/dummy/1").status_code == 404
+    assert client.post("/projects", json=VALID_PAYLOAD).status_code == 404
 
 
 def test_old_unversioned_meta_path_returns_404():
@@ -118,13 +127,10 @@ def test_old_unversioned_meta_path_returns_404():
 
 
 def test_cors_rejects_disallowed_origin(mocker):
-    mocker.patch(
-        "src.services.job_service.dispatch_dummy_job",
-        return_value=("job-1", 1),
-    )
+    _mock_create_project(mocker)
     client = TestClient(app)
     response = client.post(
-        "/api/v1/jobs/dummy",
+        "/api/v1/projects",
         json=VALID_PAYLOAD,
         headers={"Origin": "http://evil.example.com"},
     )

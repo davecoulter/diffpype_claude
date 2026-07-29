@@ -7,7 +7,7 @@ from mocpy import MOC
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
 from src.db.enums import CeleryQueue, JobStatus
-from src.db.spatial_types import MOCType
+from src.db.spatial_types import MOCType, PointHEALPixType
 
 
 # Declared explicitly (rather than relying on DeclarativeBase's implicit default)
@@ -95,8 +95,12 @@ class IngestBatch(TimestampMixin, Base):
         nullable=False,
         default=JobStatus.PENDING,
     )
+    job_configuration_id: Mapped[int | None] = mapped_column(
+        sa.ForeignKey("job_configurations.id"), nullable=True
+    )
 
     project: Mapped["Project"] = relationship()
+    job_configuration: Mapped["JobConfiguration | None"] = relationship()
 
 
 class StepDefinition(TimestampMixin, Base):
@@ -133,41 +137,6 @@ class JobConfiguration(TimestampMixin, Base):
     user_id: Mapped[int] = mapped_column(sa.ForeignKey("users.id"), nullable=False)
 
     user: Mapped["User"] = relationship(back_populates="job_configurations")
-    dummy_images: Mapped[list["DummyImage"]] = relationship(
-        back_populates="job_configuration"
-    )
-
-
-class DummyImage(TimestampMixin, Base):
-    """Stage 0 domain entity used only to prove status tracking end-to-end."""
-
-    __tablename__ = "dummy_images"
-
-    id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
-    status: Mapped[JobStatus] = mapped_column(
-        sa.Enum(
-            JobStatus,
-            name="job_status",
-            create_type=False,
-            values_callable=lambda x: [e.value for e in x],
-        ),
-        nullable=False,
-        default=JobStatus.PENDING,
-    )
-    latest_job_id: Mapped[str | None] = mapped_column(sa.String, nullable=True)
-    job_started_at: Mapped[datetime | None] = mapped_column(
-        sa.DateTime(timezone=True), nullable=True
-    )
-    job_finished_at: Mapped[datetime | None] = mapped_column(
-        sa.DateTime(timezone=True), nullable=True
-    )
-    job_configuration_id: Mapped[int | None] = mapped_column(
-        sa.ForeignKey("job_configurations.id"), nullable=True
-    )
-
-    job_configuration: Mapped["JobConfiguration | None"] = relationship(
-        back_populates="dummy_images"
-    )
 
 
 class Instrument(TimestampMixin, Base):
@@ -231,6 +200,9 @@ class Tile(TimestampMixin, Base):
     __table_args__ = (
         sa.Index("ix_tile_q3c", sa.text("q3c_ang2ipix(ra, decl)")),
         sa.Index("ix_tile_footprint_gist", "footprint", postgresql_using="gist"),
+        sa.Index(
+            "ix_tile_healpix_index_gist", "healpix_index", postgresql_using="gist"
+        ),
     )
 
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
@@ -242,7 +214,10 @@ class Tile(TimestampMixin, Base):
     delta_ra: Mapped[float] = mapped_column(sa.Float, nullable=False)
     delta_decl: Mapped[float] = mapped_column(sa.Float, nullable=False)
     footprint: Mapped["MOC | None"] = mapped_column(MOCType, nullable=True)
-    healpix_index: Mapped[int | None] = mapped_column(sa.Integer, nullable=True)
+    # Assigned a (ra, decl) tuple at write time (PointHEALPixType computes the
+    # depth-29 cell); reads back the integer cell index. nullable=False mirrors
+    # Tile.ra/decl, which are always present.
+    healpix_index: Mapped[int] = mapped_column(PointHEALPixType, nullable=False)
     coord_sys: Mapped[int] = mapped_column(sa.Integer, nullable=False, default=2000)
     project_id: Mapped[int] = mapped_column(
         sa.ForeignKey("projects.id"), nullable=False
@@ -288,12 +263,20 @@ class Level2Image(TimestampMixin, Base):
     __tablename__ = "level2_images"
     __table_args__ = (
         sa.Index("ix_level2_image_q3c", sa.text("q3c_ang2ipix(ra, decl)")),
+        sa.Index(
+            "ix_level2_image_healpix_index_gist",
+            "healpix_index",
+            postgresql_using="gist",
+        ),
     )
 
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     base_filename: Mapped[str] = mapped_column(sa.String, unique=True, nullable=False)
     ra: Mapped[float] = mapped_column(sa.Float, nullable=False)
     decl: Mapped[float] = mapped_column(sa.Float, nullable=False)
+    # Assigned a (ra, decl) tuple at write time; reads back the integer cell index.
+    # nullable=False mirrors ra/decl, which are always present for an ingested image.
+    healpix_index: Mapped[int] = mapped_column(PointHEALPixType, nullable=False)
     exp_time: Mapped[float] = mapped_column(sa.Float, nullable=False)
     mjd_avg: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
     target_name: Mapped[str] = mapped_column(sa.String, nullable=False)
@@ -380,6 +363,11 @@ class Level3Mosaic(TimestampMixin, Base):
             "footprint",
             postgresql_using="gist",
         ),
+        sa.Index(
+            "ix_level3_mosaic_healpix_index_gist",
+            "healpix_index",
+            postgresql_using="gist",
+        ),
         sa.Index("ix_level3_mosaic_q3c", sa.text("q3c_ang2ipix(ra, decl)")),
     )
 
@@ -389,6 +377,10 @@ class Level3Mosaic(TimestampMixin, Base):
     footprint: Mapped["MOC | None"] = mapped_column(MOCType, nullable=True)
     ra: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
     decl: Mapped[float | None] = mapped_column(sa.Float, nullable=True)
+    # Assigned a (ra, decl) tuple at write time; reads back the integer cell index.
+    # nullable=True mirrors ra/decl: both are absent when a mosaic has no
+    # constituent calibrations yet (barycenter uncomputable).
+    healpix_index: Mapped[int | None] = mapped_column(PointHEALPixType, nullable=True)
     instrument_id: Mapped[int] = mapped_column(
         sa.ForeignKey("instruments.id"), nullable=False
     )

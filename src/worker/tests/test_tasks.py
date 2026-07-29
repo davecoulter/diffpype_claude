@@ -5,13 +5,12 @@ import pandas as pd
 import pytest
 
 from src.db.enums import JobStatus
-from src.db.models import DummyImage, IngestBatch, JobConfiguration, Level3Mosaic
+from src.db.models import IngestBatch, JobConfiguration, Level3Mosaic
 from src.worker.tasks import (
     dlq_dump,
     execute_cli_tool,
     run_ingest_batch,
     run_mosaic_drizzle,
-    sleep_and_update_status,
 )
 
 
@@ -28,69 +27,6 @@ def test_dlq_dump_logs_failed_task_payload(mocker):
         task_kwargs={"image_id": 42},
         error_msg="Connection refused",
     )
-
-
-def _make_session(mocker, fake_image=None):
-    mock_session = MagicMock()
-    mock_session.get.return_value = fake_image or MagicMock(status=JobStatus.IN_PROCESS)
-    mocker.patch("src.worker.tasks.SessionLocal", return_value=mock_session)
-    return mock_session
-
-
-def test_sleep_and_update_status_marks_image_complete_and_stamps_times(mocker):
-    mock_sleep = mocker.patch("src.worker.tasks.time.sleep")
-    mocker.patch("src.worker.tasks.func.now", return_value="NOW")
-    fake_image = MagicMock(status=JobStatus.IN_PROCESS)
-    mock_session = _make_session(mocker, fake_image)
-
-    sleep_and_update_status(42, 3)
-
-    mock_sleep.assert_called_once_with(3)
-    assert mock_session.get.call_count == 2
-    mock_session.get.assert_called_with(DummyImage, 42)
-    assert fake_image.status == JobStatus.COMPLETE
-    assert fake_image.job_started_at == "NOW"
-    assert fake_image.job_finished_at == "NOW"
-    # Two short transactions: the start-time write, then the completion write.
-    assert mock_session.commit.call_count == 2
-    assert mock_session.close.call_count == 2
-
-
-def test_sleep_and_update_status_records_start_before_sleeping(mocker):
-    """job_started_at must be committed before the sleep so a mid-run crash is recoverable."""
-    order = []
-    mocker.patch(
-        "src.worker.tasks.time.sleep", side_effect=lambda *_: order.append("sleep")
-    )
-    mocker.patch("src.worker.tasks.func.now", return_value="NOW")
-    mock_session = _make_session(mocker)
-    mock_session.commit.side_effect = lambda: order.append("commit")
-
-    sleep_and_update_status(1, 1)
-
-    assert order[0] == "commit"
-    assert order.index("commit") < order.index("sleep")
-
-
-def test_sleep_and_update_status_uses_default_sleep_duration(mocker):
-    mock_sleep = mocker.patch("src.worker.tasks.time.sleep")
-    _make_session(mocker)
-
-    sleep_and_update_status(1)
-
-    mock_sleep.assert_called_once_with(5)
-
-
-def test_sleep_and_update_status_propagates_exception_and_closes_session(mocker):
-    """The task body no longer swallows exceptions; they bubble to Celery/on_failure."""
-    mocker.patch("src.worker.tasks.time.sleep")
-    mock_session = _make_session(mocker)
-    mock_session.commit.side_effect = RuntimeError("commit failed")
-
-    with pytest.raises(RuntimeError, match="commit failed"):
-        sleep_and_update_status(7, 2)
-
-    mock_session.close.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

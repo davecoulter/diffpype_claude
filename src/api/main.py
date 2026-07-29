@@ -10,7 +10,6 @@ from sqladmin import Admin
 
 from src.api.admin import (
     DiffpypeAuthBackend,
-    DummyImageAdmin,
     JobConfigurationAdmin,
     ProjectAdmin,
     StepDefinitionAdmin,
@@ -18,7 +17,6 @@ from src.api.admin import (
 )
 from src.api.routes.epochs import router as epochs_router
 from src.api.routes.ingest import router as ingest_router
-from src.api.routes.jobs import router as jobs_router
 from src.api.routes.meta import router as meta_router
 from src.api.routes.mosaics import router as mosaics_router
 from src.api.routes.projects import router as projects_router
@@ -37,7 +35,6 @@ admin = Admin(app, engine, authentication_backend=_auth_backend)
 admin.add_view(UserAdmin)
 admin.add_view(ProjectAdmin)
 admin.add_view(StepDefinitionAdmin)
-admin.add_view(DummyImageAdmin)
 admin.add_view(JobConfigurationAdmin)
 
 
@@ -85,7 +82,6 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
     return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
 
 
-app.include_router(jobs_router, prefix="/api/v1")
 app.include_router(meta_router, prefix="/api/v1")
 app.include_router(projects_router, prefix="/api/v1")
 app.include_router(ingest_router, prefix="/api/v1")

@@ -1,25 +1,24 @@
 """Celery base task providing the framework Boundary Pattern.
 
 ``DiffpypeTask.on_failure`` is the outer backstop for any exception that bubbles
-out of a task body. It logs the crash with structlog, clears the (possibly
-invalid) transaction state with an explicit ``rollback``, and transitions the
-domain entity to ``JobStatus.FAILED`` so downstream consumers (the polling UI)
-observe a terminal state instead of an orphaned ``in_process`` record.
+out of a task body. It is deliberately entity-agnostic: it logs the crash with
+structlog and dispatches the failed payload to the dead-letter queue, but does
+not write any domain entity's status. Tasks that track a domain row (e.g.
+``run_ingest_batch``, ``run_mosaic_drizzle``) own their own crash-safe FAILED
+transition inside the task body; entities orphaned in ``IN_PROCESS`` by an
+uncatchable crash (SIGKILL/OOM, where ``on_failure`` never runs at all) are
+reconciled by the stuck-job watchdog (doc 30).
 """
 
 import celery
-from sqlalchemy import func
 from sqlalchemy.exc import OperationalError as SAOperationalError
 
 from src.core.config import settings
 from src.core.logger import get_logger
-from src.db.enums import JobStatus
-from src.db.models import DummyImage
-from src.db.session import SessionLocal
 
 
 class DiffpypeTask(celery.Task):
-    """Base task that guarantees failure logging and DB transaction safety."""
+    """Base task that guarantees failure logging and dead-letter dispatch."""
 
     # Include SAOperationalError so transient DB connection drops are retried,
     # not just raw socket-level IOError/ConnectionError.
@@ -36,32 +35,18 @@ class DiffpypeTask(celery.Task):
     def on_failure(self, exc, task_id, args, kwargs, einfo) -> None:
         # The active OTel task span supplies the correlation_id to every log line
         # via the structlog processor, so no manual context binding is needed here.
-        image_id = args[0] if args else None
         log = get_logger()
         log.error(
             "task_failed",
             task_id=task_id,
-            image_id=image_id,
+            args=args,
             error=str(exc),
             exc_info=einfo,
         )
 
-        # DB update and DLQ dispatch are intentionally separated: if the DB is
-        # down, the status write fails but the DLQ dispatch (Redis-only) must
-        # still fire so the task is never silently lost.
-        db = SessionLocal()
-        try:
-            db.rollback()
-            image = db.get(DummyImage, image_id)
-            if image is not None:
-                image.status = JobStatus.FAILED
-                image.job_finished_at = func.now()
-                db.commit()
-        except Exception:
-            log.error("on_failure_db_update_failed", task_id=task_id, exc_info=True)
-        finally:
-            db.close()
-
+        # DLQ dispatch (Redis-only) always fires so the failed payload is never
+        # silently lost. No domain-entity status write happens here — see the
+        # module docstring for why on_failure is intentionally entity-agnostic.
         try:
             from src.worker.tasks import (
                 dlq_dump,

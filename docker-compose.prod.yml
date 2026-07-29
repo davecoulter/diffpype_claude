@@ -32,7 +32,7 @@ services:
   api:
     image: ghcr.io/davecoulter/diffpype_claude-api:${IMAGE_TAG:-main}
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       ADMIN_USER: ${ADMIN_USER}
@@ -57,7 +57,7 @@ services:
   worker_light:
     image: ghcr.io/davecoulter/diffpype_claude-worker:${IMAGE_TAG:-main}
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       CELERY_QUEUES: light,dead_letter
@@ -82,7 +82,7 @@ services:
   worker_heavy:
     image: ghcr.io/davecoulter/diffpype_claude-worker:${IMAGE_TAG:-main}
     environment:
-      DATABASE_URL: postgresql+psycopg2://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
       REDIS_URL: redis://redis:6379/0
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
       CELERY_QUEUES: heavy_memory
