@@ -17,21 +17,22 @@ from src.db.models import (
     Level2Calibration,
     Level2Image,
     Level3Mosaic,
+    Project,
     epoch_level2_calibration_association,
     tile_level2_calibration_association,
 )
+from src.db.spatial_types import union_mocs
+from src.services import job_service
 
 
 def _unioned_footprint_and_barycenter(mocs: list[MOC]) -> tuple[MOC, float, float]:
     """Union a list of MOCs and return (union, ra_barycenter_deg, decl_barycenter_deg).
 
-    Ports the prototype's ``Get_Unioned_MOC``, plus barycenter extraction —
-    addresses GitHub issue #27 in the same write path that already has to
-    compute the union.
+    Delegates the union to the shared ``spatial_types.union_mocs`` helper, plus
+    barycenter extraction — addresses GitHub issue #27 in the same write path that
+    already has to compute the union.
     """
-    union = mocs[0]
-    for moc in mocs[1:]:
-        union = union.union(moc)
+    union = union_mocs(mocs)
     barycenter = union.barycenter()
     return union, float(barycenter.ra.degree), float(barycenter.dec.degree)
 
@@ -93,6 +94,21 @@ def create_mosaic(
     if footprints:
         footprint, ra, decl = _unioned_footprint_and_barycenter(footprints)
 
+    project = db.get(Project, project_id)
+    assert project is not None, f"Project {project_id} not found"
+    job_config = job_service.create_job_configuration(
+        db,
+        user_id=project.user_id,
+        task_name="src.worker.tasks.run_mosaic_drizzle",
+        job_kwargs={
+            "project_id": project_id,
+            "tile_id": tile_id,
+            "epoch_id": epoch_id,
+            "band_id": band_id,
+            "instrument_id": instrument_id,
+        },
+    )
+
     mosaic = Level3Mosaic(
         filename=filename,
         target_plate_scale=target_plate_scale,
@@ -107,6 +123,7 @@ def create_mosaic(
         epoch_id=epoch_id,
         tile_id=tile_id,
         project_id=project_id,
+        job_configuration_id=job_config.id,
         status=JobStatus.PENDING,
     )
     db.add(mosaic)

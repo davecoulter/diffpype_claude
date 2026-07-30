@@ -40,6 +40,8 @@ serialization and regex parsing psycopg2 required.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import astropy.units as u
 import numpy as np
 import sqlalchemy as sa
@@ -137,6 +139,20 @@ def _point_to_depth29_cell(ra_deg: float, decl_deg: float) -> int:
         max_norder=MAX_DEPTH,
     )
     return int(moc.to_depth29_ranges[0][0])
+
+
+def union_mocs(mocs: Sequence[MOC]) -> MOC:
+    """Return the union of a non-empty sequence of MOCs.
+
+    The single shared implementation of "combine these footprints into one" —
+    consumed by both ``mosaic_service`` (constituent-calibration footprint union)
+    and ``tile_service`` (project-footprint region derivation), replacing the
+    prototype's ``DataUtils.Get_Unioned_MOC``.
+    """
+    union = mocs[0]
+    for moc in mocs[1:]:
+        union = union.union(moc)
+    return union
 
 
 def moc_to_ranges(moc: MOC | None) -> list[tuple[int, int]] | None:

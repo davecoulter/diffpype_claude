@@ -104,6 +104,29 @@ services:
     networks:
       - diffpype_net
 
+  beat:
+    image: ghcr.io/davecoulter/diffpype_claude-worker:${IMAGE_TAG:-main}
+    # Single database-backed Celery Beat process (see docker-compose.yml for the
+    # rationale). Consumes no task queues; publishes scheduled tasks to Redis.
+    command: celery -A src.worker.celery_app beat -S sqlalchemy_celery_beat.schedulers:DatabaseScheduler --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+      OTEL_SERVICE_NAME: diffpype-beat
+      STAGING_SYNC_INTERVAL_SECONDS: ${STAGING_SYNC_INTERVAL_SECONDS:-300}
+      ENABLE_STAGING_SYNC_CRON: ${ENABLE_STAGING_SYNC_CRON:-true}
+      JOB_STALENESS_TIMEOUT_SECONDS: ${JOB_STALENESS_TIMEOUT_SECONDS:-3600}
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - diffpype_net
+
 networks:
   diffpype_net:
     name: diffpype_net

@@ -15,10 +15,23 @@ router = APIRouter(prefix="/tiles", tags=["tiles"])
 
 
 @router.post("/tessellate", response_model=list[TileCreate])
-def tessellate_tiles(body: TileTessellationRequest) -> list[TileCreate]:
-    moc_to_tile = ranges_to_moc(body.moc_to_tile)
-    tiles = tile_service.generate_tile_tessellation(
-        body.tile_side_length_arc_min, moc_to_tile, body.overlap_in_arc_min
+def tessellate_tiles(
+    body: TileTessellationRequest, db: Session = Depends(get_db)
+) -> list[TileCreate]:
+    tiles = tile_service.generate_tessellation_for_region(
+        db,
+        body.region_source,
+        body.tile_side_length_arc_min,
+        body.overlap_in_arc_min,
+        body.overlap_only,
+        ra=body.ra,
+        decl=body.decl,
+        radius_deg=body.radius_deg,
+        project_id=body.project_id,
+        min_ra=body.min_ra,
+        max_ra=body.max_ra,
+        min_decl=body.min_decl,
+        max_decl=body.max_decl,
     )
     return [
         TileCreate(

@@ -22,10 +22,10 @@ def client():
     return TestClient(app)
 
 
-def test_tessellate_tiles_returns_preview_without_writing(client, mocker):
+def test_tessellate_tiles_returns_preview_without_writing(client, mock_db, mocker):
     fake_moc = MOC.new_empty(10)
-    mocker.patch(
-        "src.services.tile_service.generate_tile_tessellation",
+    resolve = mocker.patch(
+        "src.services.tile_service.generate_tessellation_for_region",
         return_value=[
             {
                 "name": "Tile_1",
@@ -41,10 +41,11 @@ def test_tessellate_tiles_returns_preview_without_writing(client, mocker):
     response = client.post(
         "/api/v1/tiles/tessellate",
         json={
-            "project_id": 1,
+            "region_source": "cone",
             "tile_side_length_arc_min": 6.0,
-            "moc_to_tile": [[0, 10]],
-            "overlap_in_arc_min": 0.0,
+            "ra": 10.0,
+            "decl": 20.0,
+            "radius_deg": 0.3,
         },
     )
 
@@ -53,6 +54,21 @@ def test_tessellate_tiles_returns_preview_without_writing(client, mocker):
     assert len(body) == 1
     assert body[0]["name"] == "Tile_1"
     assert body[0]["footprint"] == []  # new_empty MOC has no ranges
+    # region_source + params were passed through to the service resolver.
+    assert resolve.call_args.kwargs["radius_deg"] == 0.3
+
+
+def test_tessellate_tiles_cone_missing_radius_is_422(client, mock_db):
+    response = client.post(
+        "/api/v1/tiles/tessellate",
+        json={
+            "region_source": "cone",
+            "tile_side_length_arc_min": 6.0,
+            "ra": 10.0,
+            "decl": 20.0,
+        },
+    )
+    assert response.status_code == 422
 
 
 def test_create_tiles_returns_persisted_tiles(client, mock_db, mocker):

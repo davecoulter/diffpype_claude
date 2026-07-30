@@ -2,6 +2,17 @@ FROM python:3.12-slim
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 
+# MinIO client (`mc`), used by run_staging_sync's `mc mirror` staging->canonical
+# sync (doc 30 §1). Arch-aware so the image builds on both CI's linux/amd64 and
+# an Apple-Silicon linux/arm64 build. Only the worker image gets `mc` — the api
+# image never runs the sync (it is dispatched to the worker).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && curl -fsSL "https://dl.min.io/client/mc/release/linux-$(dpkg --print-architecture)/mc" \
+        -o /usr/local/bin/mc \
+    && chmod +x /usr/local/bin/mc \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Layer 1: install deps only (cached unless pyproject.toml/uv.lock change).

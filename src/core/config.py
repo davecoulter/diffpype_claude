@@ -29,6 +29,17 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
     storage_backend: str = "s3"
     local_storage_root: str = "./data"
+    staging_location: str = "./data/staging"
+    staging_sync_interval_seconds: int = 300
+    enable_staging_sync_cron: bool = True
+    staging_sync_soft_time_limit_seconds: int = 1800
+    ingest_batch_soft_time_limit_seconds: int = 7200
+    mosaic_drizzle_soft_time_limit_seconds: int = 3600
+    cli_tool_soft_time_limit_seconds: int = 3600
+    db_backup_soft_time_limit_seconds: int = 3600
+    dlq_dump_soft_time_limit_seconds: int = 30
+    reconcile_stuck_jobs_soft_time_limit_seconds: int = 120
+    job_staleness_timeout_seconds: int = 3600
 
 
 settings = Settings()  # type: ignore[call-arg]  # database_url/redis_url are populated from the environment at runtime; mypy can't see that.

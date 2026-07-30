@@ -67,6 +67,7 @@ autodoc_mock_imports = [
     "slugify",
     "sqladmin",
     "sqlalchemy",
+    "sqlalchemy_celery_beat",
     "src.api.admin",
     "starlette",
     "starlette_exporter",

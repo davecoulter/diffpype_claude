@@ -170,6 +170,35 @@ services:
     networks:
       - diffpype_net
 
+  beat:
+    build:
+      context: .
+      dockerfile: docker/worker.Dockerfile
+    # Dedicated Celery Beat process (exactly one, ever) using the database-backed
+    # scheduler so schedules edited at runtime via SQLAdmin take effect without a
+    # restart. Not a --beat flag on a worker: that would double-fire schedules if
+    # the worker ever scaled past one replica. Requires the scheduler tables to
+    # exist (run `alembic upgrade head` first); it consumes no task queues.
+    command: celery -A src.worker.celery_app beat -S sqlalchemy_celery_beat.schedulers:DatabaseScheduler --loglevel=info
+    environment:
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      REDIS_URL: redis://redis:6379/0
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-http://jaeger:4317}
+      OTEL_SERVICE_NAME: diffpype-beat
+      STAGING_SYNC_INTERVAL_SECONDS: ${STAGING_SYNC_INTERVAL_SECONDS:-300}
+      ENABLE_STAGING_SYNC_CRON: ${ENABLE_STAGING_SYNC_CRON:-true}
+      JOB_STALENESS_TIMEOUT_SECONDS: ${JOB_STALENESS_TIMEOUT_SECONDS:-3600}
+    volumes:
+      - ./src:/app/src
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - diffpype_net
+
   flower:
     image: mher/flower:2.0.1
     environment:

@@ -7,10 +7,14 @@ import pytest
 from src.db.enums import JobStatus
 from src.db.models import IngestBatch, JobConfiguration, Level3Mosaic
 from src.worker.tasks import (
+    db_backup_cron,
     dlq_dump,
     execute_cli_tool,
+    reconcile_stuck_jobs_cron,
     run_ingest_batch,
     run_mosaic_drizzle,
+    run_staging_sync,
+    sync_staging_cron,
 )
 
 
@@ -279,6 +283,20 @@ def test_run_ingest_batch_missing_batch_raises_assertion(mocker):
     mock_session.close.assert_called_once()
 
 
+def test_run_ingest_batch_skips_already_resolved_stale_redelivery(mocker):
+    """Regression: a redelivered task must not resume/overwrite a batch the
+    stuck-job watchdog already marked FAILED (doc 30 §3a)."""
+    batch = MagicMock(spec=IngestBatch, id=1, status=JobStatus.FAILED)
+    mock_session, _ = _make_ingest_session(mocker, fake_batch=batch)
+    mock_storage_factory = mocker.patch("src.worker.tasks.get_storage_service")
+
+    run_ingest_batch(1)
+
+    mock_storage_factory.assert_not_called()
+    assert batch.status == JobStatus.FAILED  # unchanged, never touched
+    mock_session.close.assert_called_once()
+
+
 # ---------------------------------------------------------------------------
 # run_mosaic_drizzle
 # ---------------------------------------------------------------------------
@@ -327,6 +345,20 @@ def test_run_mosaic_drizzle_missing_mosaic_raises_assertion(mocker):
     mock_session.close.assert_called_once()
 
 
+def test_run_mosaic_drizzle_skips_already_resolved_stale_redelivery(mocker):
+    """Regression: a redelivered task must not resume/overwrite a mosaic the
+    stuck-job watchdog already marked FAILED (doc 30 §3a)."""
+    mosaic = MagicMock(spec=Level3Mosaic, id=1, status=JobStatus.FAILED)
+    mock_session, _ = _make_mosaic_session(mocker, fake_mosaic=mosaic)
+    mock_sleep = mocker.patch("src.worker.tasks.time.sleep")
+
+    run_mosaic_drizzle(1)
+
+    mock_sleep.assert_not_called()
+    assert mosaic.status == JobStatus.FAILED
+    mock_session.close.assert_called_once()
+
+
 def test_execute_cli_tool_handles_none_job_kwargs(mocker):
     mock_session, _ = _make_cli_session(mocker, None)
     mock_session.get.return_value = MagicMock(spec=JobConfiguration, job_kwargs=None)
@@ -338,4 +370,49 @@ def test_execute_cli_tool_handles_none_job_kwargs(mocker):
 
     mock_run.assert_called_once_with(
         ["mytool"], capture_output=True, text=True, check=True
+    )
+
+
+# --- Operational service tasks (doc 30) ---
+
+
+def test_run_staging_sync_delegates_to_service(mocker):
+    sync = mocker.patch("src.services.storage_service.sync_staging_to_canonical")
+
+    run_staging_sync("/staging", "raw")
+
+    sync.assert_called_once_with("/staging", "raw")
+
+
+def test_sync_staging_cron_syncs_configured_location_to_bucket_root(mocker):
+    sync = mocker.patch("src.services.storage_service.sync_staging_to_canonical")
+    mocker.patch("src.worker.tasks.settings.staging_location", "/data/staging")
+
+    sync_staging_cron()
+
+    sync.assert_called_once_with("/data/staging", "")
+
+
+def test_reconcile_stuck_jobs_cron_runs_reconcile_and_closes_session(mocker):
+    fake_session = MagicMock()
+    mocker.patch("src.worker.tasks.SessionLocal", return_value=fake_session)
+    reconcile = mocker.patch(
+        "src.services.job_service.reconcile_stuck_jobs",
+        return_value=[{"entity": "IngestBatch", "id": 1, "age_seconds": 9000.0}],
+    )
+
+    reconcile_stuck_jobs_cron()
+
+    reconcile.assert_called_once_with(fake_session)
+    fake_session.close.assert_called_once()
+
+
+def test_db_backup_cron_logs_trigger(mocker):
+    mock_logger = MagicMock()
+    mocker.patch("src.worker.tasks.get_logger", return_value=mock_logger)
+
+    db_backup_cron()
+
+    mock_logger.info.assert_called_once_with(
+        "db_backup_cron_triggered", detail="Nightly backup triggered"
     )

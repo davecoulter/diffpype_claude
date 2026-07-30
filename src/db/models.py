@@ -134,6 +134,10 @@ class JobConfiguration(TimestampMixin, Base):
     id: Mapped[int] = mapped_column(sa.Integer, primary_key=True)
     job_kwargs: Mapped[dict | None] = mapped_column(sa.JSON, nullable=True)
     execution_command: Mapped[str | None] = mapped_column(sa.String, nullable=True)
+    # Which Celery task (or CLI tool) this row's kwargs/command correspond to,
+    # e.g. "src.worker.tasks.run_ingest_batch". Nullable for provenance rows that
+    # predate the column or aren't tied to a named task.
+    task_name: Mapped[str | None] = mapped_column(sa.String, nullable=True)
     user_id: Mapped[int] = mapped_column(sa.ForeignKey("users.id"), nullable=False)
 
     user: Mapped["User"] = relationship(back_populates="job_configurations")

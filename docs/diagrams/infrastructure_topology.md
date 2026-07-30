@@ -63,6 +63,10 @@ flowchart TB
             w_app --> w_core
         end
 
+        subgraph beat_c["beat (Celery Beat)"]
+            beat_app["Celery Beat<br/>DatabaseScheduler"]:::workerLayer
+        end
+
         subgraph ui_c["ui (React / Vite)"]
             direction TB
             ui_view["Dashboard<br/>DashboardPage.tsx"]:::uiLayer
@@ -112,6 +116,11 @@ flowchart TB
     w_tasks -->|store/fetch FITS| minio_node
     portainer_node -.-> minio_c
 
+    %% Beat scheduler (declared last so existing link indices stay valid)
+    beat_app -->|read/write schedules| db
+    beat_app -->|publish scheduled tasks| redis
+    portainer_node -.-> beat_c
+
     classDef apiLayer fill:#3B6EA5,stroke:#1F4066,color:#fff
     classDef workerLayer fill:#C97A3D,stroke:#8A4F24,color:#fff
     classDef repo fill:#4C8C6B,stroke:#2E5842,color:#fff
@@ -123,7 +132,7 @@ flowchart TB
     classDef spacer fill:transparent,stroke:transparent,color:transparent
     classDef networkBg fill:transparent,stroke:#5A6C77,color:#fff
 
-    class db_c,redis_c,minio_c,api_c,worker_c,ui_c,jaeger_c,flower_c,portainer_c containerBg
+    class db_c,redis_c,minio_c,api_c,worker_c,beat_c,ui_c,jaeger_c,flower_c,portainer_c containerBg
     class network networkBg
 
     %% Tier 1 (default): solid amber — configured application data flow between components
@@ -131,7 +140,7 @@ flowchart TB
     %% Invisible spacer links used only to center nodes within db_c, worker_c, portainer_c — must override the amber default or they render as dangling solid lines
     linkStyle 0,1,11,17,18 stroke:none,stroke-width:0
     %% Tier 3: dashed cool steel gray — Portainer manages containers at the Docker daemon level, independent of what's running inside them
-    linkStyle 25,26,27,28,29,30,31,38 stroke:#8F97A0,stroke-width:4px
+    linkStyle 25,26,27,28,29,30,31,38,41 stroke:#8F97A0,stroke-width:4px
     %% Tier 2: dashed rose — Jaeger/Flower/DBeaver observe a specific process's exposed port/protocol (OTLP, Celery/Redis state, Postgres wire protocol)
     linkStyle 32,33,34,35 stroke:#C0546A,stroke-width:4px
 ```
@@ -167,6 +176,7 @@ flowchart TB
 | `minio` | Local S3-compatible object store (mock) for FITS payloads; the api and workers read/write files here via `S3StorageService` |
 | `api` | Serves the HTTP API, admin panel, and CLI; validates input and dispatches work |
 | `worker` (×2: `worker_light`, `worker_heavy`) | Same image/codebase, deployed as two instances with different queue subscriptions and resource limits — `light` for fast I/O-bound tasks, `heavy_memory` for memory/compute-intensive ones |
+| `beat` | Single Celery Beat process (same worker image) using the database-backed scheduler; reads/writes runtime-editable schedules in Postgres (`celery_schema`) and publishes due tasks to Redis. Consumes no task queues |
 | `ui` | Frontend for dispatching jobs and viewing status |
 | `jaeger` | Collects and visualizes distributed traces via OTLP |
 | `flower` | Real-time Celery task/worker monitoring dashboard |

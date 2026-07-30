@@ -159,41 +159,88 @@ def cmd_ingest_status(args: argparse.Namespace) -> None:
     _print_entity_table([batch])
 
 
-def _cone_moc(ra: float, decl: float, radius_deg: float):
-    """Build a MOC covering a cone region, the CLI's way to specify a tile-tessellation target."""
-    import astropy.units as u
-    from mocpy import MOC
+def cmd_sync_staging(args: argparse.Namespace) -> None:
+    """Dispatch a staging→canonical storage sync through the service layer and print its job id."""
+    from src.services import storage_service
 
-    return MOC.from_cone(
-        lon=ra * u.deg, lat=decl * u.deg, radius=radius_deg * u.deg, max_depth=10
+    job_id = storage_service.dispatch_staging_sync(
+        args.staging_prefix, args.canonical_prefix
     )
+    print(f"Dispatched staging sync. job_id={job_id}")
+
+
+def cmd_reconcile_stuck_jobs(args: argparse.Namespace) -> None:
+    """Fail any job stuck IN_PROCESS past the staleness threshold and print what changed."""
+    from src.db.session import SessionLocal
+    from src.services import job_service
+
+    db = SessionLocal()
+    try:
+        if args.threshold_seconds is not None:
+            reconciled = job_service.reconcile_stuck_jobs(db, args.threshold_seconds)
+        else:
+            reconciled = job_service.reconcile_stuck_jobs(db)
+    finally:
+        db.close()
+
+    print(f"Reconciled {len(reconciled)} stuck job(s).")
+    for r in reconciled:
+        print(f"  {r['entity']} id={r['id']} (age={r['age_seconds']:.0f}s) -> FAILED")
+
+
+def _tessellation_region_kwargs(args: argparse.Namespace) -> dict:
+    """Collect the region-resolution kwargs from parsed tessellation CLI args."""
+    return {
+        "ra": args.ra,
+        "decl": args.decl,
+        "radius_deg": args.radius_deg,
+        "project_id": args.region_project_id,
+        "min_ra": args.min_ra,
+        "max_ra": args.max_ra,
+        "min_decl": args.min_decl,
+        "max_decl": args.max_decl,
+    }
 
 
 def cmd_tessellate_tiles(args: argparse.Namespace) -> None:
-    """Preview a tile tessellation over a cone region and print it, without writing to the DB."""
+    """Preview a tile tessellation over the requested region and print it, without writing to the DB."""
+    from src.db.enums import RegionSource
+    from src.db.session import SessionLocal
     from src.services import tile_service
 
-    moc_to_tile = _cone_moc(args.ra, args.decl, args.radius_deg)
-    tiles = tile_service.generate_tile_tessellation(
-        args.tile_side_arcmin, moc_to_tile, args.overlap_arcmin
-    )
+    db = SessionLocal()
+    try:
+        tiles = tile_service.generate_tessellation_for_region(
+            db,
+            RegionSource(args.region_source),
+            args.tile_side_arcmin,
+            args.overlap_arcmin,
+            args.overlap_only,
+            **_tessellation_region_kwargs(args),
+        )
+    finally:
+        db.close()
     print(f"Generated {len(tiles)} tile(s):")
     for t in tiles:
         print(f"  {t['name']}: ra={t['ra']:.4f}, decl={t['decl']:.4f}")
 
 
 def cmd_create_tiles(args: argparse.Namespace) -> None:
-    """Generate a tile tessellation over a cone region and persist it through the service layer."""
+    """Generate a tile tessellation over the requested region and persist it through the service layer."""
+    from src.db.enums import RegionSource
     from src.db.session import SessionLocal
     from src.services import tile_service
 
-    moc_to_tile = _cone_moc(args.ra, args.decl, args.radius_deg)
-    tiles = tile_service.generate_tile_tessellation(
-        args.tile_side_arcmin, moc_to_tile, args.overlap_arcmin
-    )
-
     db = SessionLocal()
     try:
+        tiles = tile_service.generate_tessellation_for_region(
+            db,
+            RegionSource(args.region_source),
+            args.tile_side_arcmin,
+            args.overlap_arcmin,
+            args.overlap_only,
+            **_tessellation_region_kwargs(args),
+        )
         created = tile_service.create_tiles(db, args.project_id, tiles)
     finally:
         db.close()
@@ -341,9 +388,16 @@ def cmd_populate_demo_project(args: argparse.Namespace) -> None:
             return
         print("Ingest complete.")
 
-        moc_to_tile = _cone_moc(args.ra, args.decl, args.radius_deg)
-        tessellation = tile_service.generate_tile_tessellation(
-            args.tile_side_arcmin, moc_to_tile, args.overlap_arcmin
+        from src.db.enums import RegionSource
+
+        tessellation = tile_service.generate_tessellation_for_region(
+            db,
+            RegionSource.CONE,
+            args.tile_side_arcmin,
+            args.overlap_arcmin,
+            ra=args.ra,
+            decl=args.decl,
+            radius_deg=args.radius_deg,
         )
         tiles = tile_service.create_tiles(db, project.id, tessellation)
         print(f"Created {len(tiles)} tile(s).")
@@ -399,6 +453,8 @@ def cmd_populate_demo_project(args: argparse.Namespace) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     """Construct the argparse parser with all diffpype-manage subcommands."""
+    from src.db.enums import RegionSource
+
     parser = argparse.ArgumentParser(
         prog="diffpype-manage",
         description="DevOps CLI for Diffpype administrative tasks.",
@@ -443,7 +499,39 @@ def build_parser() -> argparse.ArgumentParser:
         "--id", type=int, required=True, metavar="ID", help="IngestBatch integer ID."
     )
 
+    sync_staging = subparsers.add_parser(
+        "sync-staging",
+        help="Dispatch a staging→canonical storage sync (mc mirror) via the worker.",
+    )
+    sync_staging.add_argument(
+        "--staging-prefix",
+        required=True,
+        help="Staging location (local path or s3:// URI) to mirror from.",
+    )
+    sync_staging.add_argument(
+        "--canonical-prefix",
+        default="",
+        help="Canonical bucket prefix to mirror into (default: bucket root).",
+    )
+
+    reconcile = subparsers.add_parser(
+        "reconcile-stuck-jobs",
+        help="Fail any job stuck IN_PROCESS past the staleness threshold.",
+    )
+    reconcile.add_argument(
+        "--threshold-seconds",
+        type=int,
+        default=None,
+        help="Staleness threshold in seconds (default: JOB_STALENESS_TIMEOUT_SECONDS).",
+    )
+
     def _add_tessellation_args(subparser: argparse.ArgumentParser) -> None:
+        subparser.add_argument(
+            "--region-source",
+            choices=[r.value for r in RegionSource],
+            default=RegionSource.CONE.value,
+            help="Region specification mode (default: cone).",
+        )
         subparser.add_argument(
             "--tile-side-arcmin",
             type=float,
@@ -451,16 +539,44 @@ def build_parser() -> argparse.ArgumentParser:
             help="Tile side length (arcmin).",
         )
         subparser.add_argument(
-            "--ra", type=float, required=True, help="Target cone center RA (deg)."
-        )
-        subparser.add_argument(
-            "--decl", type=float, required=True, help="Target cone center Dec (deg)."
-        )
-        subparser.add_argument(
-            "--radius-deg", type=float, required=True, help="Target cone radius (deg)."
-        )
-        subparser.add_argument(
             "--overlap-arcmin", type=float, default=0.0, help="Tile overlap (arcmin)."
+        )
+        subparser.add_argument(
+            "--overlap-only",
+            action=argparse.BooleanOptionalAction,
+            default=True,
+            help="Keep only tiles intersecting the region (default); "
+            "--no-overlap-only materializes the full grid.",
+        )
+        # cone
+        subparser.add_argument(
+            "--ra", type=float, help="Cone center RA (deg) [region-source=cone]."
+        )
+        subparser.add_argument(
+            "--decl", type=float, help="Cone center Dec (deg) [region-source=cone]."
+        )
+        subparser.add_argument(
+            "--radius-deg", type=float, help="Cone radius (deg) [region-source=cone]."
+        )
+        # project_footprint
+        subparser.add_argument(
+            "--region-project-id",
+            type=int,
+            help="Project whose calibration footprints define the region "
+            "[region-source=project_footprint].",
+        )
+        # bounding_box
+        subparser.add_argument(
+            "--min-ra", type=float, help="Min RA (deg) [region-source=bounding_box]."
+        )
+        subparser.add_argument(
+            "--max-ra", type=float, help="Max RA (deg) [region-source=bounding_box]."
+        )
+        subparser.add_argument(
+            "--min-decl", type=float, help="Min Dec (deg) [region-source=bounding_box]."
+        )
+        subparser.add_argument(
+            "--max-decl", type=float, help="Max Dec (deg) [region-source=bounding_box]."
         )
 
     tessellate_tiles = subparsers.add_parser(
@@ -572,6 +688,10 @@ def main(argv: list[str] | None = None) -> None:
         cmd_ingest(args)
     elif args.command == "ingest-status":
         cmd_ingest_status(args)
+    elif args.command == "sync-staging":
+        cmd_sync_staging(args)
+    elif args.command == "reconcile-stuck-jobs":
+        cmd_reconcile_stuck_jobs(args)
     elif args.command == "tessellate-tiles":
         cmd_tessellate_tiles(args)
     elif args.command == "create-tiles":

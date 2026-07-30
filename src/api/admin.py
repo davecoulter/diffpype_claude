@@ -2,6 +2,11 @@
 
 import bcrypt
 from sqladmin import ModelView
+from sqlalchemy_celery_beat.models import (
+    CrontabSchedule,
+    IntervalSchedule,
+    PeriodicTask,
+)
 from sqladmin.authentication import AuthenticationBackend
 from starlette.requests import Request
 
@@ -105,10 +110,84 @@ class JobConfigurationAdmin(ModelView, model=JobConfiguration):
     column_list = [
         JobConfiguration.id,
         JobConfiguration.user_id,
+        JobConfiguration.task_name,
         JobConfiguration.execution_command,
         JobConfiguration.created_at,
     ]
     form_excluded_columns = [
         JobConfiguration.created_at,
         JobConfiguration.updated_at,
+    ]
+
+
+class PeriodicTaskAdmin(ModelView, model=PeriodicTask):
+    """Admin view for creating, editing, and pausing database-backed Celery Beat schedules."""
+
+    name = "Periodic Task"
+    name_plural = "Periodic Tasks"
+    column_list = [
+        PeriodicTask.id,
+        PeriodicTask.name,
+        PeriodicTask.task,
+        PeriodicTask.enabled,
+        PeriodicTask.last_run_at,
+    ]
+    # Only IntervalSchedule is used today (see doc 30 §4) — excluding the other
+    # three schedule-type relations avoids SQLAdmin auto-generating a required
+    # "Not a valid choice" dropdown for schedule types no PeriodicTask actually uses.
+    # Plain strings (not PeriodicTask.model_crontabschedule etc.) are deliberate:
+    # PeriodicTask comes from sqlalchemy_celery_beat's own separate declarative
+    # registry, and referencing its relationship attributes directly at this
+    # class body's evaluation time raced that registry's mapper configuration,
+    # raising a spurious AttributeError. Strings defer resolution to request time.
+    form_excluded_columns = [
+        "model_crontabschedule",
+        "model_solarschedule",
+        "model_clockedschedule",
+    ]
+
+
+class IntervalScheduleAdmin(ModelView, model=IntervalSchedule):
+    """Admin view for the interval (every-N-period) schedules a PeriodicTask can reference."""
+
+    name = "Interval Schedule"
+    name_plural = "Interval Schedules"
+    # Each PeriodicTask gets its own dedicated IntervalSchedule row (never
+    # shared), so two rows with identical every/period are easy to mistake for
+    # duplicates. Surfacing the owning task name(s) disambiguates them.
+    # String keys (not IntervalSchedule.periodic_tasks) for the same reason
+    # PeriodicTaskAdmin.form_excluded_columns uses strings above: this model's
+    # relationships live in sqlalchemy_celery_beat's own declarative registry.
+    column_list = [
+        IntervalSchedule.id,
+        IntervalSchedule.every,
+        IntervalSchedule.period,
+        "periodic_tasks",
+    ]
+    column_formatters = {
+        # sqladmin's own ClassVar annotation types the formatter's first arg as
+        # bare `type`, but it's actually the model instance at render time.
+        # Must return a list aligned 1:1 with the relation's items, not a
+        # single joined string: for to-many columns, list.html zips the raw
+        # related-object list against whatever this returns, one link per
+        # pair — a joined string got zipped character-by-character against a
+        # single-item list, silently rendering only its first letter.
+        "periodic_tasks": lambda model, _attr: [
+            pt.name for pt in model.periodic_tasks  # type: ignore[attr-defined]
+        ],
+    }
+
+
+class CrontabScheduleAdmin(ModelView, model=CrontabSchedule):
+    """Admin view for the crontab schedules a PeriodicTask can reference."""
+
+    name = "Crontab Schedule"
+    name_plural = "Crontab Schedules"
+    column_list = [
+        CrontabSchedule.id,
+        CrontabSchedule.minute,
+        CrontabSchedule.hour,
+        CrontabSchedule.day_of_week,
+        CrontabSchedule.day_of_month,
+        CrontabSchedule.month_of_year,
     ]

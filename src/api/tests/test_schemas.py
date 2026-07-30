@@ -59,3 +59,71 @@ def test_tile_read_coerces_a_real_moc_footprint_to_a_range_list():
     result = TileRead.model_validate(_FakeTile(), from_attributes=True)
 
     assert result.footprint == moc_to_ranges(moc)
+
+
+# --- TileTessellationRequest region_source validation ---
+
+
+def test_tessellation_request_cone_valid():
+    from src.api.schemas import TileTessellationRequest
+
+    req = TileTessellationRequest(
+        region_source="cone",
+        tile_side_length_arc_min=6.0,
+        ra=10.0,
+        decl=20.0,
+        radius_deg=0.3,
+    )
+    assert req.overlap_only is True
+    assert req.region_source.value == "cone"
+
+
+def test_tessellation_request_bounding_box_valid():
+    from src.api.schemas import TileTessellationRequest
+
+    req = TileTessellationRequest(
+        region_source="bounding_box",
+        tile_side_length_arc_min=6.0,
+        min_ra=1.0,
+        max_ra=2.0,
+        min_decl=3.0,
+        max_decl=4.0,
+        overlap_only=False,
+    )
+    assert req.overlap_only is False
+
+
+def test_tessellation_request_project_footprint_valid():
+    from src.api.schemas import TileTessellationRequest
+
+    req = TileTessellationRequest(
+        region_source="project_footprint", tile_side_length_arc_min=6.0, project_id=7
+    )
+    assert req.project_id == 7
+
+
+def test_tessellation_request_cone_missing_fields_rejected():
+    from src.api.schemas import TileTessellationRequest
+
+    with pytest.raises(ValidationError, match="region_source=cone requires"):
+        TileTessellationRequest(region_source="cone", tile_side_length_arc_min=6.0)
+
+
+def test_tessellation_request_project_footprint_missing_project_id_rejected():
+    from src.api.schemas import TileTessellationRequest
+
+    with pytest.raises(
+        ValidationError, match="region_source=project_footprint requires"
+    ):
+        TileTessellationRequest(
+            region_source="project_footprint", tile_side_length_arc_min=6.0
+        )
+
+
+def test_tessellation_request_bounding_box_missing_fields_rejected():
+    from src.api.schemas import TileTessellationRequest
+
+    with pytest.raises(ValidationError, match="region_source=bounding_box requires"):
+        TileTessellationRequest(
+            region_source="bounding_box", tile_side_length_arc_min=6.0, min_ra=1.0
+        )

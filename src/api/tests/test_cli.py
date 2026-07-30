@@ -20,8 +20,10 @@ from src.cli import (
     cmd_ingest_status,
     cmd_mosaic_status,
     cmd_populate_demo_project,
+    cmd_reconcile_stuck_jobs,
     cmd_reset_db,
     cmd_seed_db,
+    cmd_sync_staging,
     cmd_tessellate_tiles,
     main,
 )
@@ -446,25 +448,38 @@ def test_main_routes_tessellate_tiles_to_cmd_tessellate_tiles(mocker):
     mock_cmd.assert_called_once()
 
 
+def _tessellation_namespace(command, **overrides):
+    """A full tessellation argparse.Namespace with region fields defaulted to cone."""
+    base = dict(
+        command=command,
+        region_source="cone",
+        tile_side_arcmin=6.0,
+        overlap_arcmin=0.0,
+        overlap_only=True,
+        ra=10.0,
+        decl=20.0,
+        radius_deg=0.1,
+        region_project_id=None,
+        min_ra=None,
+        max_ra=None,
+        min_decl=None,
+        max_decl=None,
+    )
+    base.update(overrides)
+    return argparse.Namespace(**base)
+
+
 def test_cmd_tessellate_tiles_prints_generated_tiles(mocker, capsys):
     mocker.patch(
-        "src.services.tile_service.generate_tile_tessellation",
+        "src.services.tile_service.generate_tessellation_for_region",
         return_value=[
             {"name": "Tile_1", "ra": 10.0, "decl": 20.0},
             {"name": "Tile_2", "ra": 10.1, "decl": 20.1},
         ],
     )
+    mocker.patch("src.db.session.SessionLocal", return_value=MagicMock())
 
-    cmd_tessellate_tiles(
-        argparse.Namespace(
-            command="tessellate-tiles",
-            tile_side_arcmin=6.0,
-            ra=10.0,
-            decl=20.0,
-            radius_deg=0.1,
-            overlap_arcmin=0.0,
-        )
-    )
+    cmd_tessellate_tiles(_tessellation_namespace("tessellate-tiles"))
 
     out = capsys.readouterr().out
     assert "Generated 2 tile(s)" in out
@@ -488,7 +503,7 @@ def test_main_routes_create_tiles_to_cmd_create_tiles(mocker):
 
 def test_cmd_create_tiles_persists_and_prints_count(mocker, capsys):
     mocker.patch(
-        "src.services.tile_service.generate_tile_tessellation",
+        "src.services.tile_service.generate_tessellation_for_region",
         return_value=[{"name": "Tile_1"}, {"name": "Tile_2"}],
     )
     mock_create = mocker.patch(
@@ -498,23 +513,96 @@ def test_cmd_create_tiles_persists_and_prints_count(mocker, capsys):
     mock_session = MagicMock()
     mocker.patch("src.db.session.SessionLocal", return_value=mock_session)
 
-    cmd_create_tiles(
-        argparse.Namespace(
-            command="create-tiles",
-            project_id=3,
-            tile_side_arcmin=6.0,
-            ra=10.0,
-            decl=20.0,
-            radius_deg=0.1,
-            overlap_arcmin=0.0,
-        )
-    )
+    cmd_create_tiles(_tessellation_namespace("create-tiles", project_id=3))
 
     mock_create.assert_called_once()
     assert mock_create.call_args[0][1] == 3
     mock_session.close.assert_called_once()
     out = capsys.readouterr().out
     assert "Created 2 tile(s) for project_id=3" in out
+
+
+def test_cmd_create_tiles_bounding_box_passes_region_params(mocker):
+    resolve = mocker.patch(
+        "src.services.tile_service.generate_tessellation_for_region",
+        return_value=[{"name": "Tile_1"}],
+    )
+    mocker.patch("src.services.tile_service.create_tiles", return_value=[MagicMock()])
+    mocker.patch("src.db.session.SessionLocal", return_value=MagicMock())
+
+    cmd_create_tiles(
+        _tessellation_namespace(
+            "create-tiles",
+            project_id=3,
+            region_source="bounding_box",
+            ra=None,
+            decl=None,
+            radius_deg=None,
+            min_ra=10.0,
+            max_ra=11.0,
+            min_decl=20.0,
+            max_decl=21.0,
+        )
+    )
+
+    assert resolve.call_args.kwargs["min_ra"] == 10.0
+    assert resolve.call_args.kwargs["max_decl"] == 21.0
+
+
+def test_main_routes_sync_staging_to_cmd_sync_staging(mocker):
+    mock_cmd = mocker.patch("src.cli.cmd_sync_staging")
+    main(["sync-staging", "--staging-prefix", "/staging"])
+    mock_cmd.assert_called_once()
+
+
+def test_main_routes_reconcile_stuck_jobs_to_cmd(mocker):
+    mock_cmd = mocker.patch("src.cli.cmd_reconcile_stuck_jobs")
+    main(["reconcile-stuck-jobs"])
+    mock_cmd.assert_called_once()
+
+
+def test_cmd_sync_staging_dispatches_and_prints_job_id(mocker, capsys):
+    mocker.patch(
+        "src.services.storage_service.dispatch_staging_sync", return_value="sync-7"
+    )
+
+    cmd_sync_staging(
+        argparse.Namespace(
+            command="sync-staging", staging_prefix="/staging", canonical_prefix="raw"
+        )
+    )
+
+    assert "Dispatched staging sync. job_id=sync-7" in capsys.readouterr().out
+
+
+def test_cmd_reconcile_stuck_jobs_prints_failed_entities(mocker, capsys):
+    mocker.patch(
+        "src.services.job_service.reconcile_stuck_jobs",
+        return_value=[{"entity": "IngestBatch", "id": 9, "age_seconds": 9000.0}],
+    )
+    mocker.patch("src.db.session.SessionLocal", return_value=MagicMock())
+
+    cmd_reconcile_stuck_jobs(
+        argparse.Namespace(command="reconcile-stuck-jobs", threshold_seconds=3600)
+    )
+
+    out = capsys.readouterr().out
+    assert "Reconciled 1 stuck job(s)." in out
+    assert "IngestBatch id=9" in out
+
+
+def test_cmd_reconcile_stuck_jobs_default_threshold(mocker):
+    reconcile = mocker.patch(
+        "src.services.job_service.reconcile_stuck_jobs", return_value=[]
+    )
+    mocker.patch("src.db.session.SessionLocal", return_value=MagicMock())
+
+    cmd_reconcile_stuck_jobs(
+        argparse.Namespace(command="reconcile-stuck-jobs", threshold_seconds=None)
+    )
+
+    # No explicit threshold => called with the session only.
+    assert reconcile.call_args[0][1:] == ()
 
 
 EPOCH_ARGS = [

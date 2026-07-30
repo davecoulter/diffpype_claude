@@ -9,17 +9,22 @@ from starlette_exporter import PrometheusMiddleware, handle_metrics
 from sqladmin import Admin
 
 from src.api.admin import (
+    CrontabScheduleAdmin,
     DiffpypeAuthBackend,
+    IntervalScheduleAdmin,
     JobConfigurationAdmin,
+    PeriodicTaskAdmin,
     ProjectAdmin,
     StepDefinitionAdmin,
     UserAdmin,
 )
 from src.api.routes.epochs import router as epochs_router
 from src.api.routes.ingest import router as ingest_router
+from src.api.routes.jobs import router as jobs_router
 from src.api.routes.meta import router as meta_router
 from src.api.routes.mosaics import router as mosaics_router
 from src.api.routes.projects import router as projects_router
+from src.api.routes.storage import router as storage_router
 from src.api.routes.tiles import router as tiles_router
 from src.core.config import settings
 from src.core.logger import configure_logging, get_logger
@@ -36,6 +41,9 @@ admin.add_view(UserAdmin)
 admin.add_view(ProjectAdmin)
 admin.add_view(StepDefinitionAdmin)
 admin.add_view(JobConfigurationAdmin)
+admin.add_view(PeriodicTaskAdmin)
+admin.add_view(IntervalScheduleAdmin)
+admin.add_view(CrontabScheduleAdmin)
 
 
 def sqladmin_exception_handler(request: Request, exc: Exception) -> NoReturn:
@@ -85,9 +93,11 @@ async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONR
 app.include_router(meta_router, prefix="/api/v1")
 app.include_router(projects_router, prefix="/api/v1")
 app.include_router(ingest_router, prefix="/api/v1")
+app.include_router(storage_router, prefix="/api/v1")
 app.include_router(tiles_router, prefix="/api/v1")
 app.include_router(epochs_router, prefix="/api/v1")
 app.include_router(mosaics_router, prefix="/api/v1")
+app.include_router(jobs_router, prefix="/api/v1")
 
 # Instrument the app, the SQLAlchemy engine, and Celery. Called last so the router
 # and middleware stack are fully assembled before OTel wraps the ASGI app.
