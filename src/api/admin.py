@@ -173,7 +173,8 @@ class IntervalScheduleAdmin(ModelView, model=IntervalSchedule):
         # pair — a joined string got zipped character-by-character against a
         # single-item list, silently rendering only its first letter.
         "periodic_tasks": lambda model, _attr: [
-            pt.name for pt in model.periodic_tasks  # type: ignore[attr-defined]
+            pt.name
+            for pt in model.periodic_tasks  # type: ignore[attr-defined]
         ],
     }
 
