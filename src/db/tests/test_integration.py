@@ -255,6 +255,8 @@ def test_sysadmin_seeding_creates_sysadmin_user(mocker, test_engine):
 
 def _cleanup_seeded_rows(TestSession):
     """Delete every row seed_step_definitions() commits outside the transactional fixture."""
+    from sqlalchemy_celery_beat.models import IntervalSchedule, PeriodicTask
+
     cleanup = TestSession()
     try:
         sysadmin_id = cleanup.query(User.id).filter_by(username="sysadmin").scalar()
@@ -267,6 +269,11 @@ def _cleanup_seeded_rows(TestSession):
         cleanup.query(Band).filter(Band.name.in_(["F150W", "F277W"])).delete(
             synchronize_session=False
         )
+        # seed_step_definitions also seeds the Beat schedules (doc 30 §4), committed
+        # outside the fixture. Delete PeriodicTask before IntervalSchedule (the
+        # former references the latter via the polymorphic schedule association).
+        cleanup.query(PeriodicTask).delete()
+        cleanup.query(IntervalSchedule).delete()
         cleanup.commit()
     finally:
         cleanup.close()
@@ -1212,6 +1219,13 @@ def test_create_mosaic_computes_footprint_and_barycenter_from_constituent_calibr
             Band.name.in_(["F150W-mosaicsvc", "F277W-mosaicsvc"])
         ).delete(synchronize_session=False)
         db.query(Instrument).filter_by(name="NIRCam-mosaicsvc").delete()
+        # create_mosaic now commits a JobConfiguration referencing this user
+        # (doc 30 §3); it must be deleted before the user or the FK blocks it.
+        db.query(JobConfiguration).filter(
+            JobConfiguration.user_id.in_(
+                db.query(User.id).filter_by(username="mosaicserviceowner")
+            )
+        ).delete(synchronize_session=False)
         db.query(User).filter_by(username="mosaicserviceowner").delete()
         db.commit()
         db.close()
@@ -1319,5 +1333,150 @@ def test_bulk_upsert_images_and_calibrations_is_idempotent(test_engine):
         db.query(Band).filter_by(name="F150W-bulk").delete()
         db.query(Instrument).filter_by(name="NIRCam-bulk").delete()
         db.query(User).filter_by(username="bulkupsertowner").delete()
+        db.commit()
+        db.close()
+
+
+# --- Operational services (doc 30) ---
+
+
+def test_seeding_creates_beat_schedules(mocker, test_engine):
+    """seed_step_definitions seeds the sync/reconcile Beat schedules idempotently."""
+    from sqlalchemy_celery_beat.models import PeriodicTask
+
+    from src.db.seed import seed_step_definitions
+
+    TestSession = sessionmaker(bind=test_engine)
+    mocker.patch("src.db.seed.SessionLocal", side_effect=TestSession)
+
+    seed_step_definitions()
+
+    db = TestSession()
+    try:
+        names = {t.name for t in db.query(PeriodicTask).all()}
+        assert "sync-staging-cron" in names
+        assert "reconcile-stuck-jobs-cron" in names
+        # A second seed must not duplicate the schedules.
+        seed_step_definitions()
+        assert db.query(PeriodicTask).count() == 2
+    finally:
+        db.close()
+
+    _cleanup_seeded_rows(TestSession)
+
+
+def test_reconcile_stuck_jobs_fails_stale_in_process_records(test_engine):
+    """Real-DB watchdog sweep across both tracked entity types + a per-job override.
+
+    Own session (reconcile_stuck_jobs commits internally), with explicit cleanup
+    per the integration-test isolation rule.
+    """
+    from src.services.job_service import reconcile_stuck_jobs
+
+    TestSession = sessionmaker(bind=test_engine)
+    db = TestSession()
+    user = project = None
+    try:
+        user = User(
+            username="watchdogowner",
+            email="watchdogowner@diffpype.local",
+            is_active=True,
+            hashed_password="dummy_hash_for_testing",
+        )
+        db.add(user)
+        db.flush()
+        project = _make_project(db, user, name="WatchdogProject")
+        instrument, band = _make_ref(db, "NIRCam-wd", "F150W-wd")
+        tile = _make_tile(db, project, name="WD-Tile")
+        epoch = _make_epoch(db, project, tile, band)
+
+        stale_batch = IngestBatch(
+            project_id=project.id, s3_prefix="raw/", status=JobStatus.IN_PROCESS
+        )
+        fresh_batch = IngestBatch(
+            project_id=project.id, s3_prefix="raw/", status=JobStatus.IN_PROCESS
+        )
+        override_config = JobConfiguration(
+            user_id=user.id,
+            task_name="src.worker.tasks.run_ingest_batch",
+            job_kwargs={"staleness_timeout_seconds": 60},
+        )
+        db.add(override_config)
+        db.flush()
+        override_batch = IngestBatch(
+            project_id=project.id,
+            s3_prefix="raw/",
+            status=JobStatus.IN_PROCESS,
+            job_configuration_id=override_config.id,
+        )
+        stale_mosaic = Level3Mosaic(
+            filename="wd.fits",
+            target_plate_scale=0.03,
+            instrument_id=instrument.id,
+            band_id=band.id,
+            epoch_id=epoch.id,
+            tile_id=tile.id,
+            project_id=project.id,
+            status=JobStatus.IN_PROCESS,
+        )
+        db.add_all([stale_batch, fresh_batch, override_batch, stale_mosaic])
+        db.commit()
+
+        # updated_at is server-managed; force the stale rows' clocks into the past.
+        db.execute(
+            text(
+                "UPDATE ingest_batches SET updated_at = now() - interval '2 hours' "
+                "WHERE id = :i"
+            ).bindparams(i=stale_batch.id)
+        )
+        # override_batch: aged 120s -> survives the 3600s global default, but the
+        # per-job 60s override makes it stale.
+        db.execute(
+            text(
+                "UPDATE ingest_batches SET updated_at = now() - interval '120 seconds' "
+                "WHERE id = :i"
+            ).bindparams(i=override_batch.id)
+        )
+        db.execute(
+            text(
+                "UPDATE level3_mosaics SET updated_at = now() - interval '2 hours' "
+                "WHERE id = :i"
+            ).bindparams(i=stale_mosaic.id)
+        )
+        db.commit()
+
+        reconciled = reconcile_stuck_jobs(db, staleness_timeout_seconds=3600)
+
+        for row in (stale_batch, fresh_batch, override_batch, stale_mosaic):
+            db.refresh(row)
+        assert stale_batch.status == JobStatus.FAILED
+        assert fresh_batch.status == JobStatus.IN_PROCESS
+        assert override_batch.status == JobStatus.FAILED
+        assert stale_mosaic.status == JobStatus.FAILED
+        reconciled_ids = {(r["entity"], r["id"]) for r in reconciled}
+        assert ("IngestBatch", stale_batch.id) in reconciled_ids
+        assert ("Level3Mosaic", stale_mosaic.id) in reconciled_ids
+    finally:
+        if project is not None:
+            db.query(Level3Mosaic).filter_by(project_id=project.id).delete(
+                synchronize_session=False
+            )
+            db.query(IngestBatch).filter_by(project_id=project.id).delete(
+                synchronize_session=False
+            )
+            db.query(Epoch).filter_by(project_id=project.id).delete(
+                synchronize_session=False
+            )
+            db.query(Tile).filter_by(project_id=project.id).delete(
+                synchronize_session=False
+            )
+            db.query(Project).filter_by(id=project.id).delete()
+        if user is not None:
+            db.query(JobConfiguration).filter_by(user_id=user.id).delete(
+                synchronize_session=False
+            )
+            db.query(User).filter_by(id=user.id).delete()
+        db.query(Band).filter_by(name="F150W-wd").delete()
+        db.query(Instrument).filter_by(name="NIRCam-wd").delete()
         db.commit()
         db.close()

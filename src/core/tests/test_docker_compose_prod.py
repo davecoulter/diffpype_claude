@@ -20,7 +20,8 @@ def test_prod_compose_images_match_ghcr_package_names():
     """docker-compose.prod.yml must reference the same image names ci.yml pushes to ghcr.io."""
     content = COMPOSE_PATH.read_text()
     assert content.count(f"image: {EXPECTED_IMAGE_PREFIX}api:") == 1
-    assert content.count(f"image: {EXPECTED_IMAGE_PREFIX}worker:") == 2
+    # worker_light, worker_heavy, and beat all run the same worker image (doc 30 §4).
+    assert content.count(f"image: {EXPECTED_IMAGE_PREFIX}worker:") == 3
     assert content.count(f"image: {EXPECTED_IMAGE_PREFIX}db:") == 1
 
 

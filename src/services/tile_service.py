@@ -18,19 +18,25 @@ from mocpy import MOC
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.orm import Session
 
+from src.db.enums import RegionSource
 from src.db.models import Level2Calibration, Tile, tile_level2_calibration_association
-from src.db.spatial_types import MOCType
+from src.db.spatial_types import MOCType, union_mocs
 
 # HEALPix order for generated tile footprints, matching the prototype's ported
 # convention for tile-scale (not detector-scale) precision. MOCType normalizes
 # any input depth to depth 29 on persistence, so this only affects computation.
 _TILE_FOOTPRINT_MAX_DEPTH = 21
 
+# HEALPix order for the resolved region MOC (cone/bounding-box/project-footprint),
+# matching the CLI's existing cone precision (`_cone_moc` uses max_depth=10).
+_REGION_MAX_DEPTH = 10
+
 
 def generate_tile_tessellation(
     tile_side_length_arc_min: float,
     moc_to_tile: MOC,
     overlap_in_arc_min: float = 0.0,
+    overlap_only: bool = True,
 ) -> list[dict]:
     """Generate a regular tile grid covering ``moc_to_tile``. Pure computation, no DB access.
 
@@ -41,6 +47,11 @@ def generate_tile_tessellation(
     (matching the CLI/API parameter names); ``delta_ra``/``delta_decl`` in the
     returned dicts (and the persisted ``Tile`` columns) are degrees, not
     arcmin — converted once here and never converted back.
+
+    ``overlap_only`` (default ``True``) keeps only tiles that actually intersect
+    ``moc_to_tile``; ``False`` keeps the full rectangular grid regardless of
+    intersection, to pre-provision tiles over a region ahead of incoming survey
+    data.
     """
     orig_deg_height = tile_side_length_arc_min / 60.0
     orig_deg_width = tile_side_length_arc_min / 60.0
@@ -132,7 +143,7 @@ def generate_tile_tessellation(
             corner_coords, complement=False, max_depth=_TILE_FOOTPRINT_MAX_DEPTH
         )
 
-        if moc_to_tile.intersection(tile_moc).sky_fraction > 0:
+        if not overlap_only or moc_to_tile.intersection(tile_moc).sky_fraction > 0:
             tiles.append(
                 {
                     "name": f"Tile_{tile_num}",
@@ -146,6 +157,113 @@ def generate_tile_tessellation(
             tile_num += 1
 
     return tiles
+
+
+def _resolve_region_moc(
+    db: Session,
+    region_source: RegionSource,
+    *,
+    ra: float | None = None,
+    decl: float | None = None,
+    radius_deg: float | None = None,
+    project_id: int | None = None,
+    min_ra: float | None = None,
+    max_ra: float | None = None,
+    min_decl: float | None = None,
+    max_decl: float | None = None,
+) -> MOC:
+    """Convert a ``region_source`` and its mode-specific parameters into a single MOC.
+
+    ``cone`` and ``bounding_box`` are pure geometry; ``project_footprint`` queries
+    every ``Level2Calibration`` footprint under ``project_id`` and unions them via
+    ``union_mocs``. Raises ``ValueError`` if the fields required by ``region_source``
+    are missing, or if a ``project_footprint`` request names a project with no
+    footprints to derive a region from. (The API boundary validates required fields
+    up front via Pydantic; this guard gives the CLI boundary the same protection.)
+    """
+
+    def _require(**fields: object) -> None:
+        missing = [name for name, value in fields.items() if value is None]
+        if missing:
+            raise ValueError(
+                f"region_source={region_source.value} requires: {', '.join(missing)}"
+            )
+
+    if region_source == RegionSource.CONE:
+        _require(ra=ra, decl=decl, radius_deg=radius_deg)
+        return MOC.from_cone(
+            lon=ra * u.deg,
+            lat=decl * u.deg,
+            radius=radius_deg * u.deg,
+            max_depth=_REGION_MAX_DEPTH,
+        )
+    if region_source == RegionSource.BOUNDING_BOX:
+        _require(min_ra=min_ra, max_ra=max_ra, min_decl=min_decl, max_decl=max_decl)
+        corners = SkyCoord(
+            [min_ra, max_ra, max_ra, min_ra],
+            [min_decl, min_decl, max_decl, max_decl],
+            unit="deg",
+            frame="icrs",
+        )
+        return MOC.from_polygon_skycoord(
+            corners, complement=False, max_depth=_REGION_MAX_DEPTH
+        )
+
+    _require(project_id=project_id)
+    footprints = [
+        row[0]
+        for row in db.execute(
+            sa.select(Level2Calibration.footprint).where(
+                Level2Calibration.project_id == project_id,
+                Level2Calibration.footprint.isnot(None),
+            )
+        ).all()
+    ]
+    if not footprints:
+        raise ValueError(
+            "project_footprint tessellation requires at least one calibration with "
+            f"a footprint under project_id={project_id}"
+        )
+    return union_mocs(footprints)
+
+
+def generate_tessellation_for_region(
+    db: Session,
+    region_source: RegionSource,
+    tile_side_length_arc_min: float,
+    overlap_in_arc_min: float = 0.0,
+    overlap_only: bool = True,
+    *,
+    ra: float | None = None,
+    decl: float | None = None,
+    radius_deg: float | None = None,
+    project_id: int | None = None,
+    min_ra: float | None = None,
+    max_ra: float | None = None,
+    min_decl: float | None = None,
+    max_decl: float | None = None,
+) -> list[dict]:
+    """Resolve a ``region_source`` into a MOC, then generate its tile tessellation.
+
+    The single service entry point both the API route and CLI delegate to, keeping
+    the pure ``generate_tile_tessellation`` free of DB access while supporting all
+    three region modes.
+    """
+    moc_to_tile = _resolve_region_moc(
+        db,
+        region_source,
+        ra=ra,
+        decl=decl,
+        radius_deg=radius_deg,
+        project_id=project_id,
+        min_ra=min_ra,
+        max_ra=max_ra,
+        min_decl=min_decl,
+        max_decl=max_decl,
+    )
+    return generate_tile_tessellation(
+        tile_side_length_arc_min, moc_to_tile, overlap_in_arc_min, overlap_only
+    )
 
 
 def create_tiles(db: Session, project_id: int, tiles: list[dict]) -> list[Tile]:

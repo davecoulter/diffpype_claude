@@ -1,9 +1,15 @@
 import bcrypt
 from sqlalchemy.orm import Session
+from sqlalchemy_celery_beat.models import IntervalSchedule, PeriodicTask, Period
 
 from src.core.config import settings
 from src.db.models import Band, Instrument, User
 from src.db.session import SessionLocal
+
+# Check cadence for the stuck-job watchdog Beat task. Distinct from the staleness
+# *threshold* (JOB_STALENESS_TIMEOUT_SECONDS): this is how often the sweep runs,
+# not how old a job must be to be failed.
+_RECONCILE_CHECK_INTERVAL_SECONDS = 300
 
 # Baseline JWST reference data so a fresh sandbox is immediately usable. Central
 # wavelengths are the filter pivot wavelengths in microns. The complete standard
@@ -66,8 +72,46 @@ def _seed_reference_data(db: Session) -> None:
             db.add(Band(name=name, central_lambda=central_lambda))
 
 
+def _seed_periodic_tasks(db: Session) -> None:
+    """Seed the initial staging-sync and stuck-job-reconcile Beat schedules if none exist.
+
+    A no-op once any PeriodicTask exists, so runtime edits made via SQLAdmin are
+    never clobbered by a later ``seed-db``.
+    """
+    if db.query(PeriodicTask).count() > 0:
+        return
+
+    sync_interval = IntervalSchedule(
+        every=settings.staging_sync_interval_seconds, period=Period.SECONDS
+    )
+    reconcile_interval = IntervalSchedule(
+        every=_RECONCILE_CHECK_INTERVAL_SECONDS, period=Period.SECONDS
+    )
+    # Flush so each schedule gets its id before PeriodicTask.schedule_model reads
+    # it to populate the polymorphic (discriminator, schedule_id) association.
+    db.add_all([sync_interval, reconcile_interval])
+    db.flush()
+
+    db.add_all(
+        [
+            PeriodicTask(
+                schedule_model=sync_interval,
+                name="sync-staging-cron",
+                task="src.worker.tasks.sync_staging_cron",
+                enabled=settings.enable_staging_sync_cron,
+            ),
+            PeriodicTask(
+                schedule_model=reconcile_interval,
+                name="reconcile-stuck-jobs-cron",
+                task="src.worker.tasks.reconcile_stuck_jobs_cron",
+                enabled=True,
+            ),
+        ]
+    )
+
+
 def seed_step_definitions() -> None:
-    """Upsert the sysadmin User and baseline Instrument/Band reference data."""
+    """Upsert the sysadmin User, baseline Instrument/Band reference data, and Beat schedules."""
     db = SessionLocal()
     try:
         hashed = bcrypt.hashpw(
@@ -88,6 +132,7 @@ def seed_step_definitions() -> None:
             db.flush()
 
         _seed_reference_data(db)
+        _seed_periodic_tasks(db)
         db.commit()
     finally:
         db.close()

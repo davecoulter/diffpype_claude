@@ -5,7 +5,7 @@ import pandas as pd
 import pytest
 
 from src.db.enums import JobStatus
-from src.db.models import IngestBatch
+from src.db.models import IngestBatch, JobConfiguration
 from src.services.ingest_service import (
     _resolve_reference_ids,
     bulk_upsert_images_and_calibrations,
@@ -137,6 +137,7 @@ def test_bulk_upsert_returns_zero_for_empty_dataframe():
 
 def test_create_ingest_batch_dispatches_and_returns_ids(mocker):
     mock_db = MagicMock()
+    mock_db.get.return_value = MagicMock(user_id=42)  # the owning Project
     mock_db.refresh.side_effect = lambda obj: setattr(obj, "id", 11)
     fake_result = MagicMock(id="ingest-task-id")
     mock_delay = mocker.patch(
@@ -147,11 +148,14 @@ def test_create_ingest_batch_dispatches_and_returns_ids(mocker):
 
     assert job_id == "ingest-task-id"
     assert batch_id == 11
-    mock_db.add.assert_called_once()
-    added = mock_db.add.call_args[0][0]
-    assert isinstance(added, IngestBatch)
-    assert added.project_id == 1
-    assert added.s3_prefix == "raw/"
+    # Two rows added: the JobConfiguration provenance row, then the IngestBatch.
+    added = [c.args[0] for c in mock_db.add.call_args_list]
+    job_config = next(o for o in added if isinstance(o, JobConfiguration))
+    assert job_config.task_name == "src.worker.tasks.run_ingest_batch"
+    assert job_config.user_id == 42
+    batch = next(o for o in added if isinstance(o, IngestBatch))
+    assert batch.project_id == 1
+    assert batch.s3_prefix == "raw/"
     mock_delay.assert_called_once_with(11)
 
 

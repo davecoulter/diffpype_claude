@@ -6,13 +6,21 @@ Two interchangeable backends implement the same `StorageBackend` protocol:
 selects between them via the `STORAGE_BACKEND` setting.
 """
 
+import json
 import shutil
+import subprocess
 from pathlib import Path
 from typing import Protocol, runtime_checkable
 
 import boto3
+from celery.exceptions import SoftTimeLimitExceeded
 
 from src.core.config import Settings, settings
+from src.core.logger import get_logger
+
+# Reused, idempotently-registered `mc` alias name for the canonical S3/MinIO
+# endpoint. `mc alias set` is a no-op overwrite when re-run with the same values.
+_MC_CANONICAL_ALIAS = "diffpype-canonical"
 
 
 @runtime_checkable
@@ -98,13 +106,31 @@ class LocalStorageService:
         shutil.copyfile(source, local_path)
 
     def list_prefix(self, prefix: str) -> list[str]:
-        """Return all relative keys under the given prefix in the storage root."""
-        base = self._root / prefix
-        if not base.is_dir():
+        """Return all relative keys whose path string starts with the given prefix.
+
+        Matches S3's pure string-prefix semantics: a partial-filename prefix like
+        ``raw/jw0123`` matches ``raw/jw0123_nrca.fits`` rather than requiring
+        ``prefix`` to name an existing directory (the previous behavior, which
+        silently returned nothing for a narrow prefix). Dot-prefixed hidden files
+        (e.g. a partially-downloaded ``.tmp``) are excluded so an in-flight
+        transfer is never surfaced as an ingestable key.
+        """
+        # Walk from the deepest real directory at/above the prefix (so a narrow
+        # prefix doesn't force a full-root scan), then keep only files whose
+        # root-relative path string actually starts with the prefix.
+        search_base = self._root / prefix
+        if not search_base.is_dir():
+            search_base = search_base.parent
+        if not search_base.is_dir():
             return []
-        return sorted(
-            str(p.relative_to(self._root)) for p in base.rglob("*") if p.is_file()
-        )
+        keys: list[str] = []
+        for path in search_base.rglob("*"):
+            if not path.is_file() or path.name.startswith("."):
+                continue
+            rel = str(path.relative_to(self._root))
+            if rel.startswith(prefix):
+                keys.append(rel)
+        return sorted(keys)
 
 
 def get_storage_service(config: Settings = settings) -> StorageBackend:
@@ -112,3 +138,147 @@ def get_storage_service(config: Settings = settings) -> StorageBackend:
     if config.storage_backend == "local":
         return LocalStorageService(config)
     return S3StorageService(config)
+
+
+def _resolve_mc_canonical_target(config: Settings, canonical_prefix: str) -> str:
+    """Return the ``mc`` target path for the canonical store, registering an S3 alias if needed.
+
+    For the ``local`` backend the canonical store is a filesystem path under
+    ``LOCAL_STORAGE_ROOT``; for S3/MinIO it is ``<alias>/<bucket>/<prefix>`` after
+    an idempotent ``mc alias set`` against the configured endpoint/credentials.
+    """
+    if config.storage_backend == "local":
+        return str(Path(config.local_storage_root) / canonical_prefix)
+    subprocess.run(
+        [
+            "mc",
+            "alias",
+            "set",
+            _MC_CANONICAL_ALIAS,
+            config.s3_endpoint_url,
+            config.aws_access_key_id,
+            config.aws_secret_access_key,
+        ],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    target = f"{_MC_CANONICAL_ALIAS}/{config.s3_bucket_name}"
+    return f"{target}/{canonical_prefix}" if canonical_prefix else target
+
+
+def sync_staging_to_canonical(
+    staging_location: str, canonical_prefix: str, config: Settings = settings
+) -> None:
+    """Mirror new/changed files from a staging location into the canonical bucket via ``mc mirror``.
+
+    Consumes ``mc mirror``'s ``--json`` per-file event stream line by line, logging
+    one structured record per copied object — never ``subprocess.run(capture_output=True)``,
+    which would buffer the entire transfer in memory before any progress is visible.
+    ``mc mirror`` is itself diff-based and idempotent, so a redelivered Celery retry
+    after a worker crash simply skips whatever was already copied.
+
+    ``mc``'s real ``--json`` stream (confirmed against a live MinIO instance with
+    real FITS files, not assumed) emits three distinct shapes: a per-file success
+    event (``target``/``source``/``size``/``totalCount``/``totalSize`` — the latter
+    two are cumulative running totals across the whole mirror, giving real
+    progress even though there's no intra-file byte-level percentage); a per-file
+    or whole-job error event (``status: "error"``, an ``error`` object, no
+    ``target``); and a single trailing job-summary event with no ``target``/
+    ``source`` at all (``total``/``transferred``/``duration``/``speed``). These are
+    discriminated explicitly below rather than treating every parsed line as a
+    file copy.
+    """
+    log = get_logger()
+    canonical_target = _resolve_mc_canonical_target(config, canonical_prefix)
+    log.info(
+        "staging_sync_started",
+        staging_location=staging_location,
+        canonical_target=canonical_target,
+    )
+
+    # `--json` before the subcommand: mc emits one JSON object per transferred
+    # object on stdout. stderr is folded into stdout so a failure diagnostic is
+    # captured in the same stream we already read incrementally.
+    process = subprocess.Popen(
+        ["mc", "--json", "mirror", staging_location, canonical_target],
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    copied = 0
+    assert process.stdout is not None
+    try:
+        for line in process.stdout:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                event = json.loads(line)
+            except json.JSONDecodeError:
+                log.warning("staging_sync_unparsed_line", line=line)
+                continue
+
+            target = event.get("target")
+            if target is not None and event.get("status") != "error":
+                # Real per-file success event.
+                copied += 1
+                log.info(
+                    "staging_sync_file_copied",
+                    key=target,
+                    size=event.get("size"),
+                    index=copied,
+                    total_count=event.get("totalCount"),
+                    total_size=event.get("totalSize"),
+                )
+            elif event.get("status") == "error":
+                # Either a per-file error (target present) or a whole-job error
+                # (target absent, e.g. the destination bucket doesn't exist).
+                log.warning(
+                    "staging_sync_file_error",
+                    key=target,
+                    source=event.get("source"),
+                    error=event.get("error"),
+                )
+            else:
+                # The trailing job-summary event: no target/source at all.
+                log.info(
+                    "staging_sync_job_summary",
+                    total_bytes=event.get("total"),
+                    transferred_bytes=event.get("transferred"),
+                    duration_ns=event.get("duration"),
+                    speed_bytes_per_sec=event.get("speed"),
+                )
+        return_code = process.wait()
+    except SoftTimeLimitExceeded:
+        # A genuine hang (network partition mid-transfer, not a clean crash) —
+        # kill the subprocess so it doesn't outlive the task as an orphan, then
+        # let Celery's own timeout failure handling (on_failure + DLQ) proceed.
+        log.error("staging_sync_timed_out", files_copied_before_timeout=copied)
+        process.kill()
+        process.wait()
+        raise
+    if return_code != 0:
+        raise RuntimeError(f"mc mirror exited with code {return_code}")
+    log.info(
+        "staging_sync_completed", files_copied=copied, canonical_target=canonical_target
+    )
+
+
+def dispatch_staging_sync(staging_location: str, canonical_prefix: str) -> str:
+    """Dispatch the staging→canonical sync Celery task and return its job id.
+
+    The shared entry point for both the API route and the CLI command — neither
+    boundary runs ``mc`` in-process; the worker (where the ``mc`` binary lives)
+    does. Returns the Celery task id.
+    """
+    from src.worker.tasks import run_staging_sync  # lazy: avoids a circular import
+
+    async_result = run_staging_sync.delay(staging_location, canonical_prefix)
+    get_logger().info(
+        "staging_sync_dispatched",
+        job_id=async_result.id,
+        staging_location=staging_location,
+        canonical_prefix=canonical_prefix,
+    )
+    return async_result.id

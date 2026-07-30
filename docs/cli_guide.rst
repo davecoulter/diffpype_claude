@@ -29,10 +29,18 @@ Overview
 .. note::
 
    This guide covers the foundational database-management commands. The domain
-   commands added in later stages (``create-project``, ``ingest``,
-   ``tessellate-tiles``, ``create-mosaic``, ``populate-demo-project``, and their
-   ``*-status`` pollers) share the same Service Layer and follow the same
-   API/CLI-parity contract; run ``diffpype-manage --help`` for the full list.
+   and operational commands added in later stages (``create-project``,
+   ``ingest``, ``tessellate-tiles``, ``create-mosaic``, ``sync-staging``,
+   ``reconcile-stuck-jobs``, ``populate-demo-project``, and their ``*-status``
+   pollers) share the same Service Layer and follow the same API/CLI-parity
+   contract; run ``diffpype-manage --help`` for the full list.
+
+   ``tessellate-tiles``/``create-tiles`` take a ``--region-source``
+   (``cone`` | ``project_footprint`` | ``bounding_box``) with the fields that
+   mode needs (e.g. ``--ra/--decl/--radius-deg`` for ``cone``,
+   ``--min-ra/--max-ra/--min-decl/--max-decl`` for ``bounding_box``), plus
+   ``--overlap-only/--no-overlap-only`` to trim the grid to the region or
+   materialize it fully.
 
 ``seed-db``
 -----------
@@ -62,3 +70,30 @@ usable. Intended for local development only.
    Schema reset complete. Auto-seeding foundational records...
    Seeding database: inserting foundational sysadmin + reference records...
    Done.
+
+``sync-staging``
+----------------
+
+Dispatches a staging→canonical storage sync to the worker (which runs
+``mc mirror`` in a streamed, restart-safe Celery task). ``--staging-prefix``
+accepts a local path or an ``s3://`` URI; ``--canonical-prefix`` defaults to the
+bucket root.
+
+.. code-block:: console
+
+   $ docker compose run --rm api diffpype-manage sync-staging --staging-prefix ./data/staging --canonical-prefix raw
+   Dispatched staging sync. job_id=<celery-task-id>
+
+``reconcile-stuck-jobs``
+------------------------
+
+Fails any job left in ``IN_PROCESS`` past the staleness threshold (an
+uncatchable worker crash or OOM kill can't run a task's own failure handler).
+``--threshold-seconds`` overrides ``JOB_STALENESS_TIMEOUT_SECONDS`` for this
+sweep; it also runs automatically on a Celery Beat schedule.
+
+.. code-block:: console
+
+   $ docker compose run --rm api diffpype-manage reconcile-stuck-jobs --threshold-seconds 3600
+   Reconciled 1 stuck job(s).
+     IngestBatch id=9 (age=7200s) -> FAILED

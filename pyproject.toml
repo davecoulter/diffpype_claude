@@ -33,6 +33,7 @@ dependencies = [
     "scipy==1.18.0",
     "scikit-learn==1.9.0",
     "pandas==3.0.5",
+    "sqlalchemy-celery-beat==0.8.4",
 ]
 
 [project.scripts]

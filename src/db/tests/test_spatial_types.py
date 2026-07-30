@@ -8,7 +8,28 @@ from src.db.spatial_types import (
     _point_to_depth29_cell,
     moc_to_ranges,
     ranges_to_moc,
+    union_mocs,
 )
+
+
+def test_union_mocs_single_moc_is_a_no_op():
+    moc = MOC.from_cone(
+        lon=10 * u.deg, lat=20 * u.deg, radius=0.1 * u.deg, max_depth=10
+    )
+    result = union_mocs([moc])
+    assert result == moc
+
+
+def test_union_mocs_combines_disjoint_regions():
+    a = MOC.from_cone(lon=10 * u.deg, lat=0 * u.deg, radius=0.1 * u.deg, max_depth=10)
+    b = MOC.from_cone(lon=200 * u.deg, lat=0 * u.deg, radius=0.1 * u.deg, max_depth=10)
+
+    result = union_mocs([a, b])
+
+    # The union covers both cones' sky and is at least as large as either alone.
+    assert result.sky_fraction >= a.sky_fraction
+    assert result.sky_fraction >= b.sky_fraction
+    assert result == a.union(b)
 
 
 def test_point_to_depth29_cell_is_a_stable_positive_int():

@@ -1,8 +1,8 @@
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from src.db.enums import JobStatus
+from src.db.enums import JobStatus, RegionSource
 from src.db.spatial_types import moc_to_ranges
 
 
@@ -42,6 +42,35 @@ class IngestRequest(BaseModel):
 
     project_id: int
     s3_prefix: str
+
+
+class StorageSyncRequest(BaseModel):
+    """Request body dispatching a staging→canonical storage sync."""
+
+    staging_location: str
+    canonical_prefix: str = ""
+
+
+class StorageSyncResponse(BaseModel):
+    """Celery task id for a dispatched staging→canonical storage sync."""
+
+    job_id: str
+
+
+class JobReconcileRequest(BaseModel):
+    """Request body for a stuck-job reconciliation sweep.
+
+    ``threshold_seconds`` overrides the global staleness default for this sweep;
+    omit it to use ``JOB_STALENESS_TIMEOUT_SECONDS``.
+    """
+
+    threshold_seconds: int | None = None
+
+
+class JobReconcileResponse(BaseModel):
+    """Result of a stuck-job reconciliation sweep: the entities transitioned to FAILED."""
+
+    reconciled: list[dict]
 
 
 class IngestDispatchResponse(BaseModel):
@@ -152,12 +181,49 @@ class EpochRead(BaseModel):
 
 
 class TileTessellationRequest(BaseModel):
-    """Request body for a no-DB tile-tessellation preview over a target region."""
+    """Request body for a tile-tessellation preview over a region_source-specified region.
 
-    project_id: int
+    Replaces the previous pre-computed ``moc_to_tile`` range list: the region is
+    now specified declaratively via ``region_source`` plus its mode-specific
+    fields, which the service layer resolves into a MOC. A root validator enforces
+    that exactly the fields required by the chosen ``region_source`` are present.
+    """
+
+    region_source: RegionSource
     tile_side_length_arc_min: float
-    moc_to_tile: list[tuple[int, int]]
     overlap_in_arc_min: float = 0.0
+    overlap_only: bool = True
+
+    # cone
+    ra: float | None = None
+    decl: float | None = None
+    radius_deg: float | None = None
+
+    # project_footprint
+    project_id: int | None = None
+
+    # bounding_box
+    min_ra: float | None = None
+    max_ra: float | None = None
+    min_decl: float | None = None
+    max_decl: float | None = None
+
+    @model_validator(mode="after")
+    def _require_fields_for_region_source(self) -> "TileTessellationRequest":
+        """Ensure the fields required by the chosen region_source are all present."""
+        required_by_source = {
+            RegionSource.CONE: ("ra", "decl", "radius_deg"),
+            RegionSource.PROJECT_FOOTPRINT: ("project_id",),
+            RegionSource.BOUNDING_BOX: ("min_ra", "max_ra", "min_decl", "max_decl"),
+        }
+        required = required_by_source[self.region_source]
+        missing = [name for name in required if getattr(self, name) is None]
+        if missing:
+            raise ValueError(
+                f"region_source={self.region_source.value} requires: "
+                f"{', '.join(missing)}"
+            )
+        return self
 
 
 class TileBulkCreateRequest(BaseModel):

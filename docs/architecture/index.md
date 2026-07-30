@@ -36,4 +36,5 @@ work for that stage.
 27_schema_storage_spatial_types
 28_domain_graph_population
 29_psycopg3_healpix_dummy_cleanup
+30_operational_services_and_watchdog
 ```

@@ -22,7 +22,15 @@ from sqlalchemy.orm import Session
 
 from src.core.logger import get_logger
 from src.db.enums import JobStatus
-from src.db.models import Band, IngestBatch, Instrument, Level2Calibration, Level2Image
+from src.db.models import (
+    Band,
+    IngestBatch,
+    Instrument,
+    Level2Calibration,
+    Level2Image,
+    Project,
+)
+from src.services import job_service
 
 # HEALPix order used for per-image footprints computed from a WCS polygon — matches
 # the prototype's ported convention for detector-scale (not all-sky-tile-scale)
@@ -171,8 +179,20 @@ def create_ingest_batch(
     """Persist a PENDING IngestBatch, dispatch the ingest Celery task, return (job_id, batch_id)."""
     from src.worker.tasks import run_ingest_batch  # lazy: avoids a circular import
 
+    project = db.get(Project, project_id)
+    assert project is not None, f"Project {project_id} not found"
+    job_config = job_service.create_job_configuration(
+        db,
+        user_id=project.user_id,
+        task_name="src.worker.tasks.run_ingest_batch",
+        job_kwargs={"project_id": project_id, "s3_prefix": s3_prefix},
+    )
+
     batch = IngestBatch(
-        project_id=project_id, s3_prefix=s3_prefix, status=JobStatus.PENDING
+        project_id=project_id,
+        s3_prefix=s3_prefix,
+        status=JobStatus.PENDING,
+        job_configuration_id=job_config.id,
     )
     db.add(batch)
     db.commit()

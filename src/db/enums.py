@@ -12,3 +12,11 @@ class CeleryQueue(str, enum.Enum):
     LIGHT = "light"
     HEAVY_MEMORY = "heavy_memory"
     GPU = "gpu"
+
+
+class RegionSource(str, enum.Enum):
+    """How a tile-tessellation request specifies the sky region to cover."""
+
+    CONE = "cone"
+    PROJECT_FOOTPRINT = "project_footprint"
+    BOUNDING_BOX = "bounding_box"

@@ -1,9 +1,11 @@
 from unittest.mock import MagicMock
 
+import pytest
 from sqlalchemy.exc import OperationalError as SAOperationalError
 
 from src.core.config import settings
-from src.worker.base_task import DiffpypeTask
+from src.db.enums import JobStatus
+from src.worker.base_task import NOT_TRACKED, DiffpypeTask, TimeLimitedTask
 
 
 def test_retryable_exceptions_are_configured():
@@ -104,3 +106,133 @@ def test_on_failure_handles_empty_args(mocker):
     task.on_failure(ValueError("x"), "task-0", (), {}, None)
 
     mock_dlq.apply_async.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# TimeLimitedTask / DiffpypeTask contract enforcement
+# ---------------------------------------------------------------------------
+
+
+def test_time_limited_task_requires_soft_time_limit_seconds():
+    with pytest.raises(TypeError, match="must declare its own soft_time_limit_seconds"):
+
+        class _Missing(TimeLimitedTask):
+            pass
+
+
+def test_time_limited_task_abstract_base_is_exempt():
+    """An abstract=True intermediate base doesn't need to satisfy its own contract."""
+
+    class _AbstractBase(TimeLimitedTask):
+        abstract = True
+
+    assert _AbstractBase.abstract is True
+
+
+def test_diffpype_task_requires_tracked_entity_model():
+    with pytest.raises(TypeError, match="must declare tracked_entity_model"):
+
+        class _Missing(DiffpypeTask):
+            soft_time_limit_seconds = 60
+
+
+def test_diffpype_task_rejects_wrong_sibling_inheritance():
+    """Regression: a task accidentally subclassing another concrete task instead
+    of DiffpypeTask directly must not silently inherit its declared values."""
+
+    class _Real(DiffpypeTask):
+        tracked_entity_model = NOT_TRACKED
+        soft_time_limit_seconds = 100
+
+    with pytest.raises(TypeError, match="must declare its own soft_time_limit_seconds"):
+
+        class _Accidental(_Real):
+            pass
+
+
+def test_soft_time_limit_and_time_limit_properties_bridge_correctly():
+    class _Real(DiffpypeTask):
+        tracked_entity_model = NOT_TRACKED
+        soft_time_limit_seconds = 100
+
+    task = _Real()
+    assert task.soft_time_limit == 100
+    assert task.time_limit == 130  # soft + HARD_LIMIT_BUFFER_SECONDS (30)
+
+
+# ---------------------------------------------------------------------------
+# begin_tracked_job
+# ---------------------------------------------------------------------------
+
+
+class _FakeTrackedModel:
+    __name__ = "_FakeTrackedModel"
+
+
+class _TrackedTask(DiffpypeTask):
+    tracked_entity_model = _FakeTrackedModel
+    soft_time_limit_seconds = 100
+
+
+class _UntrackedTask(DiffpypeTask):
+    tracked_entity_model = NOT_TRACKED
+    soft_time_limit_seconds = 100
+
+
+def test_begin_tracked_job_transitions_pending_entity_to_in_process(mocker):
+    entity = MagicMock(status=JobStatus.PENDING)
+    db = MagicMock()
+    db.get.return_value = entity
+
+    result = _TrackedTask().begin_tracked_job(db, 1)
+
+    assert result is entity
+    assert entity.status == JobStatus.IN_PROCESS
+    db.commit.assert_called_once()
+
+
+def test_begin_tracked_job_skips_already_complete_entity(mocker):
+    entity = MagicMock(status=JobStatus.COMPLETE)
+    db = MagicMock()
+    db.get.return_value = entity
+    mock_log = MagicMock()
+    mocker.patch("src.worker.base_task.get_logger", return_value=mock_log)
+
+    result = _TrackedTask().begin_tracked_job(db, 1)
+
+    assert result is None
+    db.commit.assert_not_called()
+    mock_log.warning.assert_called_once_with(
+        "tracked_job_stale_redelivery_skipped",
+        entity="_FakeTrackedModel",
+        id=1,
+        status="complete",
+    )
+
+
+def test_begin_tracked_job_skips_already_failed_entity():
+    entity = MagicMock(status=JobStatus.FAILED)
+    db = MagicMock()
+    db.get.return_value = entity
+
+    result = _TrackedTask().begin_tracked_job(db, 1)
+
+    assert result is None
+    db.commit.assert_not_called()
+
+
+def test_begin_tracked_job_raises_for_not_tracked_task():
+    with pytest.raises(TypeError, match="declared NOT_TRACKED"):
+        _UntrackedTask().begin_tracked_job(MagicMock(), 1)
+
+
+def test_begin_tracked_job_raises_assertion_for_missing_entity():
+    db = MagicMock()
+    db.get.return_value = None
+
+    with pytest.raises(AssertionError, match="_FakeTrackedModel 99 not found"):
+        _TrackedTask().begin_tracked_job(db, 99)
+
+
+def test_not_tracked_repr():
+    assert repr(NOT_TRACKED) == "NOT_TRACKED"

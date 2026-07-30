@@ -12,6 +12,12 @@ if config.config_file_name is not None:
 
 target_metadata = Base.metadata
 
+# Note: sqlalchemy-celery-beat's tables (doc 30 §4) live in a dedicated
+# `celery_schema` Postgres schema, created by migration 0014. Autogenerate runs
+# with the default include_schemas=False, so it only ever reflects the public
+# schema and never sees — or tries to drop — those package-owned tables. No
+# include_object filter is needed.
+
 
 def get_url() -> str:
     # Allow callers (e.g. the integration-test fixture) to override the URL
@@ -38,7 +44,10 @@ def run_migrations_online() -> None:
     cfg["sqlalchemy.url"] = get_url()
     connectable = engine_from_config(cfg, prefix="sqlalchemy.", poolclass=pool.NullPool)
     with connectable.connect() as connection:
-        context.configure(connection=connection, target_metadata=target_metadata)
+        context.configure(
+            connection=connection,
+            target_metadata=target_metadata,
+        )
         with context.begin_transaction():
             context.run_migrations()
 
